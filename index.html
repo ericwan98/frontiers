@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frontiers</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>" />
+  </head>
+  <body>
+    <header id="hud" class="hud" hidden>
+      <div class="brand">
+        <button id="menu" type="button" class="link" title="Back to the maps (your game is saved)">← Frontiers</button>
+        <span id="map-name" class="muted"></span>
+      </div>
+      <div id="prompt" class="prompt"></div>
+      <div class="stats">
+        <button id="seed" type="button" class="link seed" title="Copy a link to this game: friends who open it get the same order" hidden></button>
+        <span id="progress"></span><span id="total"></span>
+      </div>
+    </header>
+    <main id="stage" class="stage">
+      <div id="tools" class="tools">
+        <button id="undo" type="button" title="Undo the last loop (Ctrl+Z)">Undo</button>
+        <button id="clear" type="button" title="Clear the drawing (Esc)">Clear</button>
+        <button id="eraser" type="button" aria-pressed="false" title="Erase with your loops instead of drawing (E, or hold Shift)">Eraser</button>
+        <button id="skip" type="button" title="Give up on this one: 0 points">Skip</button>
+        <button id="submit" type="button" class="primary" title="Submit (Enter)">Submit<span class="key"> ⏎</span></button>
+      </div>
+      <div class="zoom">
+        <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+        <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+        <button id="zoom-reset" type="button" aria-label="Reset zoom">⤢</button>
+        <button id="sound" type="button" aria-label="Mute sounds">🔊</button>
+      </div>
+      <p class="hint mouse">Drag to draw · Shift-drag to erase · Scroll to zoom · Space-drag or right-drag to pan</p>
+      <p class="hint touch">Draw with one finger · Pinch to zoom · Two fingers to pan</p>
+      <div id="result" class="card result" hidden></div>
+      <button id="results-button" type="button" class="results-button primary" hidden>Results</button>
+      <div id="toast" class="toast" role="status"></div>
+    </main>
+    <div id="overlay" class="overlay"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
