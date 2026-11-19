@@ -389,7 +389,8 @@ button.seed code,
 
 .maps {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* minmax(0, …): a long subtitle wraps instead of widening its column past the card. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.6rem;
   margin-top: 1rem;
 }
@@ -402,6 +403,7 @@ button.seed code,
   padding: 0.8rem 1rem;
   text-align: left;
   font-weight: 400;
+  white-space: normal;
 }
 
 .map-card strong {

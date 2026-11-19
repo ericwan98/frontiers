@@ -10,8 +10,8 @@ The world, Europe, Africa and South America also have a capitals mode: you get a
 pin where you think it is, on the same map without borders.
 
 Paris also has a streets mode: type street names and watch them light up on the map, with no end
-and no timer. Counters show the names found out of about 5,400 and the share of the street area
-they cover, overall and per arrondissement. Progress stays in the browser.
+and no timer. Counters show the names found out of about 5,400, the share of the street area
+they cover (overall and per arrondissement) and their length out of about 1,570 km. Progress stays in the browser.
 
 ## Run
 
@@ -44,7 +44,8 @@ npm run check      # typecheck + tests + build
     from the official street register of the Ville de Paris
     (`denominations-emprises-voies-actuelles` on opendata.paris.fr, ODbL), on the same projection
     as `paris` (`scripts/paris.mjs`). Voies with a code instead of a name ("voie A/1") are drawn
-    but never asked for. It weighs 1.8 MB and loads only when the mode starts.
+    but never asked for. Lengths come from the register; the few voies without one are measured
+    on their footprint. It weighs 1.8 MB and loads only when the mode starts.
 - Countries carry their capital (`capital: { name, at }`), from Natural Earth's populated places
   (v5.1.2) with a few fixes in `scripts/lib.mjs`: one capital per country (Pretoria, Sucre,
   Amsterdam…), Astana and Gitega where the data is out of date. The build fails if a capital is

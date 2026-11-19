@@ -18,19 +18,22 @@ const kmPerUnit = 6371 / projection.scale(); // as in writeMap
 const coded = (p) => !p.nomvoie || p.nomvoie.includes("/");
 
 const voies = [];
+const checks = [];
 const unnamed = [];
 for (const { properties: p, geometry } of features) {
   if (!geometry) continue;
   const polys = project(geometry).map((poly) => poly.map(simplify).filter((r) => r.length >= 4));
-  const kept = polys.filter((poly) => poly.length > 0);
-  if (kept.length === 0) continue;
+  // Rounding can flatten a passage under 2 m wide: keep it unrounded, as it can still be named.
+  let kept = polys.filter((poly) => poly.length > 0);
+  if (kept.length === 0) kept = projected(geometry);
+  // The register has a few empty duplicates, such as a second boulevard Périphérique with no area.
+  const exact = polygonClipping.union(projected(geometry));
+  const area = exact.reduce((sum, [outer, ...holes]) => sum + ringArea(outer) - holes.reduce((s, h) => s + ringArea(h), 0), 0);
+  if (area * (kmPerUnit * 1000) ** 2 < 1) continue;
   const d = kept.map(path).join("");
   if (coded(p)) { unnamed.push(d); continue; }
-  // Measured before rounding, which can flatten a narrow passage to nothing.
-  const area = polygonClipping.union(projected(geometry)).reduce(
-    (sum, [outer, ...holes]) => sum + ringArea(outer) - holes.reduce((s, h) => s + ringArea(h), 0),
-    0,
-  );
+  const estimate = exact.reduce((sum, poly) => sum + footprintLength(poly), 0) * kmPerUnit * 1000;
+  if (p.longueur) checks.push(estimate / p.longueur);
   const xs = kept.flat(2).map(([x]) => x);
   const ys = kept.flat(2).map(([, y]) => y);
   voies.push({
@@ -38,6 +41,8 @@ for (const { properties: p, geometry } of features) {
     k: p.nomvoie,
     a: (p.arrdt ?? []).map((s) => parseInt(s, 10)).filter(Number.isFinite),
     m2: Math.round(area * (kmPerUnit * 1000) ** 2),
+    // In metres. The register gives it for most voies; the rest are measured on the footprint.
+    l: Math.round(p.longueur || estimate),
     b: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map((v) => Math.round(v)),
     ...(p.orig ? { o: origin(p.orig) } : {}),
     d,
@@ -50,7 +55,11 @@ const types = [...new Set(features.map((f) => f.properties.typvoie).filter(Boole
 const json = JSON.stringify({ width: 1000, height, kmPerUnit, types, voies, unnamed: unnamed.join("") });
 writeFileSync(OUT, json);
 const m2 = voies.reduce((s, v) => s + v.m2, 0);
-console.log(`${OUT}: ${voies.length} voies, ${new Set(voies.map((v) => v.k)).size} names, ${unnamed.length} coded, ${(m2 / 1e6).toFixed(1)} km², ${Math.round(json.length / 1024)} KB`);
+checks.sort((a, b) => a - b);
+const q = (f) => checks[Math.floor(f * (checks.length - 1))].toFixed(2);
+console.log(`footprint length / register length on ${checks.length} voies: p25 ${q(0.25)}, median ${q(0.5)}, p75 ${q(0.75)}`);
+const km = voies.reduce((s, v) => s + v.l, 0) / 1000;
+console.log(`${OUT}: ${Math.round(km)} km, ${voies.length} voies, ${new Set(voies.map((v) => v.k)).size} names, ${unnamed.length} coded, ${(m2 / 1e6).toFixed(1)} km², ${Math.round(json.length / 1024)} KB`);
 
 // Streets are small enough to project point by point: d3's spherical clipping collapses some of them.
 function projected(geometry) {
@@ -60,6 +69,13 @@ function projected(geometry) {
 function project(geometry) {
   const round = (v) => Math.round(v * 10) / 10;
   return polygonClipping.union(projected(geometry).map((poly) => poly.map((ring) => ring.map((p) => p.map(round)))));
+}
+
+/** Length of a long, thin polygon: the long side of the rectangle with the same area and perimeter. */
+function footprintLength([outer, ...holes]) {
+  const area = ringArea(outer) - holes.reduce((s, h) => s + ringArea(h), 0);
+  const perimeter = outer.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - outer[i][0], p[1] - outer[i][1]), 0);
+  return (perimeter + Math.sqrt(Math.max(0, perimeter ** 2 - 16 * area))) / 4;
 }
 
 function origin(text) {

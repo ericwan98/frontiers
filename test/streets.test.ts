@@ -24,6 +24,10 @@ describe("Paris streets", () => {
     // Paris has about 28 km² of public roads.
     expect(streets.totalM2 / 1e6).toBeGreaterThan(25);
     expect(streets.totalM2 / 1e6).toBeLessThan(30);
+    // And about 1,600 km of them.
+    expect(streets.totalMetres / 1000).toBeGreaterThan(1400);
+    expect(streets.totalMetres / 1000).toBeLessThan(1800);
+    expect(streets.groupOf("Rivoli")!.metres).toBe(3070);
   });
 
   it("normalizes accents, punctuation and saints", () => {
@@ -78,6 +82,11 @@ describe("Paris streets", () => {
     expect(found("")).toBe("unknown");
   });
 
+  it("keeps voies too narrow to draw, and drops empty duplicates", () => {
+    expect(found("impasse ruffin")).toEqual(["Ruffin"]);
+    expect(data.voies.filter((v) => v.n === "boulevard Périphérique")).toHaveLength(1);
+  });
+
   it("never asks for coded voies", () => {
     expect(data.voies.some((v) => v.k.includes("/"))).toBe(false);
     expect(data.unnamed.length).toBeGreaterThan(0);
@@ -86,7 +95,7 @@ describe("Paris streets", () => {
   it("measures progress overall and per arrondissement", () => {
     const rivoli = streets.groupOf("Rivoli")!;
     const p = streets.progress([rivoli]);
-    expect(p).toMatchObject({ names: 1, voies: 1, m2: rivoli.m2 });
+    expect(p).toMatchObject({ names: 1, voies: 1, m2: rivoli.m2, metres: rivoli.metres });
     expect(p.arrondissements[0]).toBeGreaterThan(0);
     expect(p.arrondissements[3]).toBeGreaterThan(0);
     expect(p.arrondissements[10]).toBe(0);

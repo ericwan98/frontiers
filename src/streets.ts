@@ -10,6 +10,8 @@ export interface Voie {
   a: number[];
   /** Footprint area in square metres. */
   m2: number;
+  /** Length in metres. */
+  l: number;
   b: Box;
   /** Where the name comes from, shortened. */
   o?: string;
@@ -34,6 +36,7 @@ export interface StreetGroup {
   name: string;
   voies: Voie[];
   m2: number;
+  metres: number;
 }
 
 export type Answer =
@@ -45,6 +48,7 @@ export interface Progress {
   names: number;
   voies: number;
   m2: number;
+  metres: number;
   /** Share of each arrondissement's street area found, 1er first. */
   arrondissements: number[];
 }
@@ -88,6 +92,7 @@ export class Streets {
   readonly data: StreetsData;
   readonly groups: StreetGroup[];
   readonly totalM2: number;
+  readonly totalMetres: number;
   /** Street area of each arrondissement, 1er first. A voie in several counts a share in each. */
   readonly arrondissementM2: number[];
   private readonly byId = new Map<string, StreetGroup>();
@@ -103,11 +108,12 @@ export class Streets {
       const id = normalize(v.k);
       let group = this.byId.get(id);
       if (!group) {
-        group = { id, name: v.k, voies: [], m2: 0 };
+        group = { id, name: v.k, voies: [], m2: 0, metres: 0 };
         this.byId.set(id, group);
       }
       group.voies.push(v);
       group.m2 += v.m2;
+      group.metres += v.l;
     }
     this.groups = [...this.byId.values()];
     for (const g of this.groups) {
@@ -118,6 +124,7 @@ export class Streets {
       }
     }
     this.totalM2 = this.groups.reduce((s, g) => s + g.m2, 0);
+    this.totalMetres = this.groups.reduce((s, g) => s + g.metres, 0);
     this.arrondissementM2 = this.shares(data.voies);
   }
 
@@ -155,6 +162,7 @@ export class Streets {
       names: groups.length,
       voies: voies.length,
       m2: groups.reduce((s, g) => s + g.m2, 0),
+      metres: groups.reduce((s, g) => s + g.metres, 0),
       arrondissements: mine.map((m2, i) => (this.arrondissementM2[i] ? m2 / this.arrondissementM2[i] : 0)),
     };
   }

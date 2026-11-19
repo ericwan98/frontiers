@@ -1,3 +1,4 @@
+import { formatKm } from "./awards.ts";
 import { button, h } from "./dom.ts";
 import type { GameMap } from "./game.ts";
 import type { StreetGroup, Streets } from "./streets.ts";
@@ -22,7 +23,7 @@ export function forgetFound(mapId: string): void {
 }
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-const percent = (share: number) => `${(share * 100).toFixed(share < 0.1 ? 2 : 1)}%`;
+const percent = (share: number) => (share > 0 && share < 0.0001 ? "<0.01%" : `${(share * 100).toFixed(share < 0.1 ? 2 : 1)}%`);
 const count = (n: number) => n.toLocaleString("en");
 
 function voieList(g: StreetGroup): string {
@@ -122,12 +123,13 @@ export class StreetsScreen {
     localStorage.setItem(foundKey(this.map.id), JSON.stringify(this.found.map((g) => g.name)));
     this.update();
     const share = fresh.reduce((s, g) => s + g.m2, 0) / this.streets.totalM2;
+    const metres = fresh.reduce((s, g) => s + g.metres, 0);
     const what = fresh.map((g) => capital(voieList(g))).join("; ");
     // Voies named after another one say so ("Voisinage de la rue de Bercy"): the longest note says more.
     const origin = fresh.length === 1 && longestOrigin(fresh[0]);
     this.message.replaceChildren(
       button(what, () => this.zoomTo(fresh), "link street-name"),
-      ` +${percent(share)}${answer.typo ? " (one letter off, forgiven)" : ""}`,
+      ` +${percent(share)} · ${formatKm(metres / 1000)}${answer.typo ? " (one letter off, forgiven)" : ""}`,
       ...(origin ? [h("span", { class: "muted street-origin" }, origin)] : []),
     );
   }
@@ -149,7 +151,9 @@ export class StreetsScreen {
       h("strong", {}, count(p.names)),
       ` / ${count(this.streets.groups.length)} names · `,
       h("strong", {}, percent(share)),
-      " of the street area",
+      " of the street area · ",
+      h("strong", {}, formatKm(p.metres / 1000)),
+      ` of ${formatKm(this.streets.totalMetres / 1000)}`,
       h("span", { class: "muted" }, ` · ${count(p.voies)} / ${count(this.streets.data.voies.length)} voies`),
     );
     this.bar.style.width = `${Math.min(100, share * 100)}%`;
