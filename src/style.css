@@ -809,6 +809,17 @@ button {
   padding-left: 0;
 }
 
+.street-top .street-more {
+  display: none;
+  margin-left: auto;
+  padding-right: 0;
+}
+
+.street-milestone {
+  display: block;
+  color: var(--accent);
+}
+
 .street-form {
   display: flex;
   gap: 0.4rem;
@@ -909,5 +920,13 @@ button {
 
   .street-form input {
     font-size: 16px; /* smaller text makes iOS zoom in on focus */
+  }
+
+  .street-top .street-more {
+    display: inline;
+  }
+
+  .streets-panel:not(.unfolded) :is(details, .street-long) {
+    display: none;
   }
 }

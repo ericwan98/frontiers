@@ -1,10 +1,15 @@
 import { formatKm } from "./awards.ts";
+import { confetti } from "./confetti.ts";
 import { button, h } from "./dom.ts";
 import type { GameMap } from "./game.ts";
+import { fanfare } from "./sound.ts";
 import type { StreetGroup, Streets } from "./streets.ts";
 import type { FoundStreet, MapView } from "./view.ts";
 
 const RECENT = 8;
+/** Shares of the street area, and numbers of names, that are worth a celebration. */
+const AREA_MILESTONES = [0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
+const NAME_MILESTONES = [100, 250, 500, 1000, 2000, 3000, 4000, 5000];
 
 const foundKey = (mapId: string) => `frontiers:${mapId}-streets:found`;
 
@@ -33,6 +38,10 @@ function voieList(g: StreetGroup): string {
 
 const longestOrigin = (g: StreetGroup) => g.voies.reduce((best, v) => ((v.o ?? "").length > best.length ? v.o! : best), "");
 
+/** The biggest of `milestones` passed on the way from `before` to `after`. */
+const passed = (milestones: number[], before: number, after: number) =>
+  milestones.filter((m) => before < m && m <= after).pop();
+
 /** The free-play screen: name streets, watch them light up. Progress is saved after every find. */
 export class StreetsScreen {
   private readonly panel: HTMLElement;
@@ -44,6 +53,7 @@ export class StreetsScreen {
   private readonly byArrondissement: HTMLElement;
   private readonly found: StreetGroup[];
   private latest: StreetGroup | null = null;
+  private readonly more: HTMLButtonElement;
 
   constructor(
     private readonly streets: Streets,
@@ -77,10 +87,19 @@ export class StreetsScreen {
     this.bar = h("span");
     this.recent = h("ul", { class: "street-recent" });
     this.byArrondissement = h("div", { class: "street-arrondissements" });
+    // On a phone the panel starts folded to the input and a short count, to leave the map room.
+    this.more = button("More", () => this.unfold(!this.panel.classList.contains("unfolded")), "link street-more");
+    this.more.setAttribute("aria-expanded", "false");
     this.panel = h(
       "aside",
       { class: "streets-panel" },
-      h("div", { class: "street-top" }, button(`← ${map.name}`, onBack, "link"), h("strong", {}, `${map.name} streets`)),
+      h(
+        "div",
+        { class: "street-top" },
+        button(`← ${map.name}`, onBack, "link"),
+        h("strong", {}, `${map.name} streets`),
+        this.more,
+      ),
       form,
       this.message,
       this.stats,
@@ -94,12 +113,19 @@ export class StreetsScreen {
     view.setTruth(map.regions.map((r) => r.geometry));
     view.setPlaced(map.regions.map((r) => ({ name: r.short ?? r.name, shape: r.geometry, color: "none" })));
     view.setStreetBase(streets.data.unnamed + streets.data.voies.map((v) => v.d).join(""));
+    view.onStreet = (id) => {
+      const g = id === null ? undefined : streets.group(id);
+      if (g) this.tell(g);
+    };
+    // A portrait phone shows the whole city as a thin strip: start closer, on the centre.
+    if (matchMedia("(max-width: 700px) and (orientation: portrait)").matches) view.zoomBy(1.8);
     this.update();
     if (matchMedia("(pointer: fine)").matches) this.input.focus();
   }
 
   destroy(): void {
     this.panel.remove();
+    this.view.onStreet = () => {};
     this.view.setStreetBase(null);
     this.view.setTruth([]);
     this.view.setPlaced([]);
@@ -118,20 +144,56 @@ export class StreetsScreen {
       this.update();
       return this.say(`Already found: ${answer.groups.map((g) => voieList(g)).join("; ")}.`);
     }
+    const before = this.streets.progress(this.found);
     this.found.push(...fresh);
     this.latest = fresh[0];
     localStorage.setItem(foundKey(this.map.id), JSON.stringify(this.found.map((g) => g.name)));
     this.update();
     const share = fresh.reduce((s, g) => s + g.m2, 0) / this.streets.totalM2;
     const metres = fresh.reduce((s, g) => s + g.metres, 0);
-    const what = fresh.map((g) => capital(voieList(g))).join("; ");
+    this.describe(fresh, ` +${percent(share)} · ${formatKm(metres / 1000)}${answer.typo ? " (one letter off, forgiven)" : ""}`);
+    this.celebrate(before.m2 / this.streets.totalM2, before.names);
+  }
+
+  /** A found street tapped on the map: what it is and where its name comes from. */
+  private tell(g: StreetGroup): void {
+    this.latest = g;
+    this.update();
+    const arrondissements = [...new Set(g.voies.flatMap((v) => v.a))]
+      .sort((a, b) => a - b)
+      .map((a) => this.map.regions.find((r) => r.id === String(a))?.short ?? String(a));
+    this.describe([g], ` · ${percent(g.m2 / this.streets.totalM2)} · ${formatKm(g.metres / 1000)} · ${arrondissements.join(", ")}`);
+  }
+
+  private describe(groups: StreetGroup[], detail: string): void {
+    const what = groups.map((g) => capital(voieList(g))).join("; ");
     // Voies named after another one say so ("Voisinage de la rue de Bercy"): the longest note says more.
-    const origin = fresh.length === 1 && longestOrigin(fresh[0]);
+    const origin = groups.length === 1 && longestOrigin(groups[0]);
     this.message.replaceChildren(
-      button(what, () => this.zoomTo(fresh), "link street-name"),
-      ` +${percent(share)} · ${formatKm(metres / 1000)}${answer.typo ? " (one letter off, forgiven)" : ""}`,
+      button(what, () => this.zoomTo(groups), "link street-name"),
+      detail,
       ...(origin ? [h("span", { class: "muted street-origin" }, origin)] : []),
     );
+  }
+
+  /** Confetti when this find passes a milestone, of street area or of names. */
+  private celebrate(shareBefore: number, namesBefore: number): void {
+    const p = this.streets.progress(this.found);
+    const area = passed(AREA_MILESTONES, shareBefore, p.m2 / this.streets.totalM2);
+    const names = passed(NAME_MILESTONES, namesBefore, p.names);
+    const text = area
+      ? `${Math.round(area * 100)}% of the street area of ${this.map.name}!`
+      : names && `${count(names)} names of ${this.map.name} streets!`;
+    if (!text) return;
+    this.message.prepend(h("strong", { class: "street-milestone" }, `🎉 ${text}`));
+    fanfare();
+    confetti();
+  }
+
+  private unfold(on: boolean): void {
+    this.panel.classList.toggle("unfolded", on);
+    this.more.textContent = on ? "Less" : "More";
+    this.more.setAttribute("aria-expanded", String(on));
   }
 
   private say(text: string): void {
@@ -149,12 +211,14 @@ export class StreetsScreen {
     const share = p.m2 / this.streets.totalM2;
     this.stats.replaceChildren(
       h("strong", {}, count(p.names)),
-      ` / ${count(this.streets.groups.length)} names · `,
+      h("span", { class: "street-long" }, ` / ${count(this.streets.groups.length)}`),
+      " names · ",
       h("strong", {}, percent(share)),
-      " of the street area · ",
+      h("span", { class: "street-long" }, " of the street area"),
+      " · ",
       h("strong", {}, formatKm(p.metres / 1000)),
-      ` of ${formatKm(this.streets.totalMetres / 1000)}`,
-      h("span", { class: "muted" }, ` · ${count(p.voies)} / ${count(this.streets.data.voies.length)} voies`),
+      h("span", { class: "street-long" }, ` of ${formatKm(this.streets.totalMetres / 1000)}`),
+      h("span", { class: "muted street-long" }, ` · ${count(p.voies)} / ${count(this.streets.data.voies.length)} voies`),
     );
     this.bar.style.width = `${Math.min(100, share * 100)}%`;
     this.recent.replaceChildren(

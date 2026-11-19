@@ -11,7 +11,9 @@ pin where you think it is, on the same map without borders.
 
 Paris also has a streets mode: type street names and watch them light up on the map, with no end
 and no timer. Counters show the names found out of about 5,400, the share of the street area
-they cover (overall and per arrondissement) and their length out of about 1,570 km. Progress stays in the browser.
+they cover (overall and per arrondissement) and their length out of about 1,570 km. Tap a found
+street to see where its name comes from. Confetti mark milestones (1%, 5%, 10%… of the area, 100,
+500, 1,000… names). Progress stays in the browser.
 
 ## Run
 

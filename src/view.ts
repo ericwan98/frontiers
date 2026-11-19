@@ -7,6 +7,10 @@ const MAX_ZOOM = 16;
 const STROKE_TOLERANCE_PX = 1.2;
 /** Screen pixels a press may move and still count as a tap that drops a pin, not a pan. */
 const TAP_SLOP_PX = 6;
+/** Screen pixels around a tap where a found street still counts as tapped: streets are thin under a finger. */
+const STREET_REACH_PX = [0, 3, 6, 9, 12];
+/** Screen pixels between the points looked at on each circle: less than a thin street is wide at full view. */
+const STREET_STEP_PX = 3;
 /** A map pin, drawn in screen pixels with its tip at the origin. */
 const PIN_PATH = "M0 0C-2-6-9-10-9-17A9 9 0 1 1 9-17C9-10 2-6 0 0Z";
 
@@ -99,6 +103,8 @@ export class MapView {
   eraseMode = false;
   onStroke: (stroke: Stroke) => void = () => {};
   onPin: (at: Pair) => void = () => {};
+  /** A tap in streets mode, with the id of the found street under it, if any. */
+  onStreet: (id: string | null) => void = () => {};
 
   constructor(container: HTMLElement, map: GameMap) {
     this.map = map;
@@ -207,7 +213,7 @@ export class MapView {
     }
     for (const f of found) {
       if (this.streetPaths.has(f.id)) continue;
-      const path = el("path", { d: f.d });
+      const path = el("path", { d: f.d, "data-id": f.id });
       const tip = el("title");
       tip.textContent = f.name;
       path.append(tip);
@@ -274,6 +280,21 @@ export class MapView {
   resetZoom(): void {
     this.view = { x: 0, y: 0, w: this.map.width, h: this.map.height };
     this.applyView();
+  }
+
+  /** The found street nearest a screen point, looking on wider and wider circles around it. */
+  private streetAt(x: number, y: number): string | null {
+    for (const r of STREET_REACH_PX) {
+      const n = Math.max(1, Math.ceil((2 * Math.PI * r) / STREET_STEP_PX));
+      for (let i = 0; i < n; i++) {
+        const a = (i * 2 * Math.PI) / n;
+        const hit = document
+          .elementsFromPoint(x + r * Math.cos(a), y + r * Math.sin(a))
+          .find((n) => n.parentNode === this.streetFound);
+        if (hit) return hit.getAttribute("data-id");
+      }
+    }
+    return null;
   }
 
   private label(name: string, shape: MultiPolygon): SVGTextElement[] {
@@ -382,7 +403,8 @@ export class MapView {
       const wantsPan = e.button === 1 || e.button === 2 || this.spaceHeld || !this.drawingEnabled;
       svg.setPointerCapture(e.pointerId);
       if (wantsPan) {
-        const tap = this.pinEnabled && e.button === 0 && !this.spaceHeld ? ([e.clientX, e.clientY] as Pair) : null;
+        const taps = this.pinEnabled || this.svg.classList.contains("streets-mode");
+        const tap = taps && e.button === 0 && !this.spaceHeld ? ([e.clientX, e.clientY] as Pair) : null;
         this.pan = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, tap };
       } else if (e.button === 0) {
         const erase = e.shiftKey || e.altKey || this.eraseMode;
@@ -422,7 +444,10 @@ export class MapView {
       if (this.pinch && this.touches.size < 2) this.pinch = null;
       if (this.pan?.pointerId === e.pointerId) {
         // A press that barely moved drops a pin. The map may have panned a few pixels: pin where the finger is now.
-        if (this.pan.tap && this.pinEnabled && e.type === "pointerup") this.onPin(this.toMap(e));
+        if (this.pan.tap && e.type === "pointerup") {
+          if (this.pinEnabled) this.onPin(this.toMap(e));
+          else this.onStreet(this.streetAt(e.clientX, e.clientY));
+        }
         this.pan = null;
       }
       if (this.stroke?.pointerId === e.pointerId) {
