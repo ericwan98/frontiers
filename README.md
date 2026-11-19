@@ -13,7 +13,9 @@ Paris also has a streets mode: type street names and watch them light up on the 
 and no timer. Counters show the names found out of about 5,400, the share of the street area
 they cover (overall and per arrondissement) and their length out of about 1,570 km. Tap a found
 street to see where its name comes from. Confetti mark milestones (1%, 5%, 10%… of the area, 100,
-500, 1,000… names). Progress stays in the browser.
+500, 1,000… names). Progress stays in the browser. "Copy a link to merge your finds" gives a link
+that adds them to whichever browser opens it: another device, or a friend's. The link has one bit
+per name, deflated: under 1,000 characters even with half of Paris found.
 
 ## Run
 
@@ -58,7 +60,8 @@ npm run check      # typecheck + tests + build
   name ("Bercy": the rue, the boulevard, the quai…). Case, accents, punctuation, the type ("rue")
   and the article ("de la") don't matter, "st" is "saint", and one wrong, missing, extra or
   swapped letter is forgiven from 5 letters on, if only one name is that close.
-  `src/streets-screen.ts` is the screen; found names are saved in `localStorage`.
+  `src/streets-screen.ts` is the screen; found names are saved in `localStorage`. Progress links
+  number names by `order` in `paris-streets.json`: the build keeps it and adds new names at the end.
 - `src/seed.ts`: every game has a seed like `europe-10-K3F9X` (map, rounds, code), or
   `europe-cities-10-K3F9X` for capitals. Pasting it on
   the picker plays the same regions in the same order, so friends can compare their maps.

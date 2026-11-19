@@ -3,7 +3,7 @@ import { confetti } from "./confetti.ts";
 import { button, h } from "./dom.ts";
 import type { GameMap } from "./game.ts";
 import { fanfare } from "./sound.ts";
-import type { StreetGroup, Streets } from "./streets.ts";
+import { packNames, type StreetGroup, type Streets } from "./streets.ts";
 import type { FoundStreet, MapView } from "./view.ts";
 
 const RECENT = 8;
@@ -22,6 +22,14 @@ export function loadFound(mapId: string): string[] {
     return [];
   }
 }
+
+/** Adds names to the end of the saved ones, as if just found. */
+export function addFound(mapId: string, names: string[]): void {
+  localStorage.setItem(foundKey(mapId), JSON.stringify([...loadFound(mapId), ...names]));
+}
+
+/** Query parameter of a progress link: `?streets=<map id>.<code>`. */
+export const STREETS_PARAM = "streets";
 
 export function forgetFound(mapId: string): void {
   localStorage.removeItem(foundKey(mapId));
@@ -106,6 +114,7 @@ export class StreetsScreen {
       h("div", { class: "street-bar" }, this.bar),
       h("details", {}, h("summary", {}, "Latest finds"), this.recent),
       h("details", {}, h("summary", {}, "By arrondissement"), this.byArrondissement),
+      h("p", { class: "street-share" }, button("Copy a link to merge your finds", () => void this.share(), "link")),
     );
     stage.append(this.panel);
 
@@ -188,6 +197,21 @@ export class StreetsScreen {
     this.message.prepend(h("strong", { class: "street-milestone" }, `🎉 ${text}`));
     fanfare();
     confetti();
+  }
+
+  /** A link that adds these finds to whichever browser opens it: another device, or a friend's. */
+  private async share(): Promise<void> {
+    const found = new Set(this.found);
+    const code = await packNames(this.streets.data.order, (name) => found.has(this.streets.groupOf(name)!));
+    const url = new URL(location.pathname, location.origin);
+    url.searchParams.set(STREETS_PARAM, `${this.map.id}.${code}`);
+    const what = `Open it in another browser, or send it to a friend: your ${count(this.found.length)} names are added to theirs.`;
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      this.say(`Link copied. ${what}`);
+    } catch {
+      this.message.replaceChildren(`${what} `, h("input", { class: "street-link", readonly: "", value: url.toString() }));
+    }
   }
 
   private unfold(on: boolean): void {

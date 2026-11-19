@@ -9,8 +9,8 @@ import { pointsBox } from "./geometry.ts";
 import { BULLSEYE_SHARE, MAX_POINTS, square, verdict } from "./scoring.ts";
 import { dailySeed, dayCode, formatSeed, newSeed, parseSeed, seededOrder, streak, type Seed, type Setup } from "./seed.ts";
 import { fanfare, isMuted, scoreSound, setMuted } from "./sound.ts";
-import { Streets } from "./streets.ts";
-import { forgetFound, loadFound, StreetsScreen } from "./streets-screen.ts";
+import { Streets, unpackNames } from "./streets.ts";
+import { addFound, forgetFound, loadFound, STREETS_PARAM, StreetsScreen } from "./streets-screen.ts";
 import { challengeUrl, readChallenge, readPasted, shareText, sum, type Challenge } from "./share.ts";
 import { colorFor, MapView, type Pin, type TruthPin } from "./view.ts";
 
@@ -682,20 +682,69 @@ function showStreetsStart(m: GameMap): void {
   render();
 }
 
+async function loadStreets(e: MapEntry): Promise<Streets> {
+  let streets = streetsCache.get(e.id);
+  if (!streets) {
+    streets = new Streets(await e.streets!.load());
+    streetsCache.set(e.id, streets);
+  }
+  return streets;
+}
+
 async function playStreets(): Promise<void> {
   const [m, e] = [map, entry];
   if (!m || !e.streets) return;
   $("overlay").setAttribute("aria-busy", "true");
-  let streets = streetsCache.get(m.id);
-  if (!streets) {
-    streets = new Streets(await e.streets.load());
-    streetsCache.set(m.id, streets);
-  }
+  const streets = await loadStreets(e);
   $("overlay").removeAttribute("aria-busy");
   if (map !== m || !view || streetsScreen) return;
   view.resetZoom();
   streetsScreen = new StreetsScreen(streets, m, view, $("stage"), showStart);
   render();
+}
+
+/** A progress link: shows what it would add, and merges it into this browser's finds if asked. */
+async function showStreetsLink(target: MapEntry, code: string): Promise<void> {
+  showPicker();
+  $("overlay").setAttribute("aria-busy", "true");
+  localStorage.setItem(modeKey(target.id), "streets");
+  const [ok, streets] = await Promise.all([useMap(target), loadStreets(target)]);
+  const names = await unpackNames(streets.data.order, code);
+  $("overlay").removeAttribute("aria-busy");
+  if (!ok || entry !== target) return;
+  if (!names) {
+    showStart();
+    return toast("This progress link is broken: copy it again.");
+  }
+  const fresh = streets.newFinds(loadFound(target.id), names);
+  const total = new Set(names.map((n) => streets.groupOf(n)).filter(Boolean)).size;
+  $("overlay").replaceChildren(
+    h(
+      "div",
+      { class: "card start" },
+      h("h1", {}, `${target.name} streets`),
+      h(
+        "p",
+        { class: "lead" },
+        `This link holds ${total.toLocaleString("en")} street names. `,
+        fresh.length
+          ? h("strong", {}, `${fresh.length.toLocaleString("en")} of them are new to you.`)
+          : "You found all of them already.",
+      ),
+      h("p", { class: "muted" }, "Merging adds them to the streets found in this browser. Nothing is removed."),
+      h(
+        "div",
+        { class: "actions" },
+        fresh.length
+          ? button(`Add ${fresh.length.toLocaleString("en")} and play`, () => {
+              addFound(target.id, fresh);
+              void playStreets();
+            }, "primary")
+          : button("Play", () => void playStreets(), "primary"),
+        button("Not now", showStart, "link"),
+      ),
+    ),
+  );
 }
 
 function closeStreets(): void {
@@ -918,9 +967,13 @@ window.addEventListener("keydown", (e) => {
 
 // A friend's link opens their game; otherwise the picker opens over the last map played,
 // loaded in the background.
-const linked = readChallenge(new URLSearchParams(location.search));
+const params = new URLSearchParams(location.search);
+const linked = readChallenge(params);
+const [streetsMap, streetsCode] = params.get(STREETS_PARAM)?.split(".") ?? [];
+const streetsTarget = MAPS.find((m) => m.id === streetsMap && m.streets);
 history.replaceState(null, "", location.pathname);
 if (linked && !seedProblem(linked.seed)) void showChallenge(linked);
+else if (streetsTarget && streetsCode) void showStreetsLink(streetsTarget, streetsCode);
 else {
   showPicker();
   void useMap(entry);

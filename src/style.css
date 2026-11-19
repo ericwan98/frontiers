@@ -815,6 +815,20 @@ button {
   padding-right: 0;
 }
 
+.street-share {
+  margin: 0;
+}
+
+.street-share .link {
+  padding-left: 0;
+}
+
+.street-link {
+  width: 100%;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
 .street-milestone {
   display: block;
   color: var(--accent);
@@ -926,7 +940,7 @@ button {
     display: inline;
   }
 
-  .streets-panel:not(.unfolded) :is(details, .street-long) {
+  .streets-panel:not(.unfolded) :is(details, .street-long, .street-share) {
     display: none;
   }
 }

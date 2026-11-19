@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import paris from "../src/maps/paris.json";
 import data from "../src/maps/paris-streets.json";
-import { normalize, Streets, withinOneEdit, type StreetsData } from "../src/streets.ts";
+import { normalize, packNames, Streets, unpackNames, withinOneEdit, type StreetsData } from "../src/streets.ts";
 
 const streets = new Streets(data as StreetsData);
 const found = (input: string) => {
@@ -102,5 +102,39 @@ describe("Paris streets", () => {
     const all = streets.progress(streets.groups);
     expect(all.m2).toBe(streets.totalM2);
     for (const share of all.arrondissements) expect(share).toBeCloseTo(1, 6);
+  });
+});
+
+describe("progress links", () => {
+  const order = data.order;
+
+  it("number every name once, so that bits don't move when names are added", () => {
+    expect(new Set(order).size).toBe(order.length);
+    const numbered = new Set(order);
+    expect(data.voies.every((v) => numbered.has(v.k))).toBe(true);
+  });
+
+  it("round-trip found names in a short code", async () => {
+    const found = new Set(order.filter((_, i) => i % 7 === 0));
+    const code = await packNames(order, (n) => found.has(n));
+    expect(code.length).toBeLessThan(1000);
+    expect(code).toMatch(/^1[\w-]+$/);
+    expect(await unpackNames(order, code)).toEqual([...found]);
+    expect(await unpackNames(order, await packNames(order, () => false))).toEqual([]);
+  });
+
+  it("still read codes made before new names were added", async () => {
+    const code = await packNames(order.slice(0, 100), (n) => n === order[3]);
+    expect(await unpackNames([...order, "Rue Nouvelle"], code)).toEqual([order[3]]);
+  });
+
+  it("refuse broken codes", async () => {
+    expect(await unpackNames(order, "2abc")).toBeNull();
+    expect(await unpackNames(order, "1!!!")).toBeNull();
+  });
+
+  it("merge only what is new, once per name", () => {
+    const fresh = streets.newFinds(["Rivoli"], ["Rivoli", "Bercy", "Bercy", "Gone Since", "Saint-Honoré"]);
+    expect(fresh).toEqual(["Bercy", "Saint-Honoré"]);
   });
 });

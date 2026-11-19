@@ -25,6 +25,8 @@ export interface StreetsData {
   kmPerUnit: number;
   /** Street types such as "rue" or "quai", which players may type or leave out. */
   types: string[];
+  /** Every name ever built, in a fixed order that progress links number them by. New names go at the end. */
+  order: string[];
   voies: Voie[];
   /** Voies that have a code instead of a name ("voie A/1"): drawn, never asked for. */
   unnamed: string;
@@ -154,6 +156,19 @@ export class Streets {
     return close.size ? { kind: "ambiguous", groups: [...close] } : { kind: "unknown" };
   }
 
+  /** Names of `incoming` whose group isn't found in `saved` yet, once each: what a progress link adds. */
+  newFinds(saved: string[], incoming: string[]): string[] {
+    const have = new Set(saved.map((n) => this.groupOf(n)));
+    const fresh: string[] = [];
+    for (const name of incoming) {
+      const g = this.groupOf(name);
+      if (!g || have.has(g)) continue;
+      have.add(g);
+      fresh.push(g.name);
+    }
+    return fresh;
+  }
+
   progress(found: Iterable<StreetGroup>): Progress {
     const groups = [...found];
     const voies = groups.flatMap((g) => g.voies);
@@ -171,5 +186,34 @@ export class Streets {
     const out = Array<number>(20).fill(0);
     for (const v of voies) for (const a of v.a) if (a >= 1 && a <= 20) out[a - 1] += v.m2 / v.a.length;
     return out;
+  }
+}
+
+/** First character of a progress code: the format, should it ever change. */
+const CODE_VERSION = "1";
+
+const squeeze = async (bytes: Uint8Array<ArrayBuffer>, stream: CompressionStream | DecompressionStream) =>
+  new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+
+/** Found names as a short code for a link: one bit per name of `order`, deflated, in base64url. */
+export async function packNames(order: string[], has: (name: string) => boolean): Promise<string> {
+  const bits = new Uint8Array(Math.ceil(order.length / 8));
+  order.forEach((name, i) => {
+    if (has(name)) bits[i >> 3] |= 1 << (i & 7);
+  });
+  const packed = await squeeze(bits, new CompressionStream("deflate-raw"));
+  const base64 = btoa(String.fromCharCode(...packed));
+  return CODE_VERSION + base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** The names in a code from packNames, or null if it is broken. Codes made before names were added still work. */
+export async function unpackNames(order: string[], code: string): Promise<string[] | null> {
+  if (!code.startsWith(CODE_VERSION)) return null;
+  try {
+    const bytes = Uint8Array.from(atob(code.slice(1).replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+    const bits = await squeeze(bytes, new DecompressionStream("deflate-raw"));
+    return order.filter((_, i) => (bits[i >> 3] >> (i & 7)) & 1);
+  } catch {
+    return null;
   }
 }

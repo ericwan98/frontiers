@@ -1,6 +1,6 @@
 // Builds src/maps/paris-streets.json: every named voie of Paris as a projected footprint.
 // Source: the official street register of the Ville de Paris (opendata.paris.fr).
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import polygonClipping from "polygon-clipping";
 import { fetchJson, polygons, ringArea } from "./lib.mjs";
 import { arrondissements } from "./paris.mjs";
@@ -52,7 +52,11 @@ voies.sort((a, b) => a.n.localeCompare(b.n, "fr"));
 
 // Street types ("rue", "quai"…), so that players can type them or not.
 const types = [...new Set(features.map((f) => f.properties.typvoie).filter(Boolean))].sort();
-const json = JSON.stringify({ width: 1000, height, kmPerUnit, types, voies, unnamed: unnamed.join("") });
+// Progress links number names by their place in `order`: keep it, and add new names at the end only.
+const previous = existsSync(OUT) ? (JSON.parse(readFileSync(OUT, "utf8")).order ?? []) : [];
+const known = new Set(previous);
+const order = [...previous, ...[...new Set(voies.map((v) => v.k))].filter((k) => !known.has(k)).sort()];
+const json = JSON.stringify({ width: 1000, height, kmPerUnit, types, order, voies, unnamed: unnamed.join("") });
 writeFileSync(OUT, json);
 const m2 = voies.reduce((s, v) => s + v.m2, 0);
 checks.sort((a, b) => a - b);
