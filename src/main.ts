@@ -1,26 +1,31 @@
 import "./style.css";
-import { Game, type GameMap, type Placement, type SavedGame, type Scores } from "./game.ts";
+import { Game, type GameMap, type Mode, type Placement, type SavedGame, type Scores } from "./game.ts";
 import { awards, formatKm } from "./awards.ts";
 import { confetti } from "./confetti.ts";
 import { renderPng } from "./image.ts";
 import { MAPS, type MapEntry } from "./maps/index.ts";
-import { MAX_POINTS, square, verdict } from "./scoring.ts";
-import { dailySeed, dayCode, formatSeed, newSeed, parseSeed, seededOrder, streak, type Seed } from "./seed.ts";
+import { pointsBox } from "./geometry.ts";
+import { BULLSEYE_SHARE, MAX_POINTS, square, verdict } from "./scoring.ts";
+import { dailySeed, dayCode, formatSeed, newSeed, parseSeed, seededOrder, streak, type Seed, type Setup } from "./seed.ts";
 import { fanfare, isMuted, scoreSound, setMuted } from "./sound.ts";
 import { challengeUrl, readChallenge, readPasted, shareText, sum, type Challenge } from "./share.ts";
-import { colorFor, MapView } from "./view.ts";
+import { colorFor, MapView, type Pin, type TruthPin } from "./view.ts";
 
 const QUICK_COUNT = 10;
 /** Maps with more regions than this also offer a quick game. */
 const QUICK_FROM = 15;
 const LAST_MAP_KEY = "frontiers:map";
 const EASY_KEY = "frontiers:easy";
+const MODE_KEY = "frontiers:mode";
 /** Total of the last finished game on each seed. */
 const PLAYED_KEY = "frontiers:played";
 const MAX_PLAYED = 200;
 const REPLAY_MS = 1100;
-const saveKey = (mapId: string) => `frontiers:${mapId}:game`;
-const bestKey = (mapId: string) => `frontiers:${mapId}:best`;
+/** Where a map's game and best scores are stored: each mode has its own. */
+const slot = (mapId: string, mode: Mode) => (mode === "cities" ? `${mapId}-cities` : mapId);
+const saveKey = (mapId: string, mode: Mode) => `frontiers:${slot(mapId, mode)}:game`;
+const bestKey = (mapId: string, mode: Mode) => `frontiers:${slot(mapId, mode)}:best`;
+const CAPITALS: [string, string] = ["capital", "capitals"];
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -35,6 +40,10 @@ const an = (word: string) => (/^[aeiou]/i.test(word) ? `an ${word}` : `a ${word}
 
 
 let entry: MapEntry = MAPS.find((m) => m.id === localStorage.getItem(LAST_MAP_KEY)) ?? MAPS[0];
+/** The mode picked on the start screen; maps without capitals only have borders. */
+const modeOf = (m: MapEntry): Mode => (m.cities && localStorage.getItem(MODE_KEY) === "cities" ? "cities" : "borders");
+/** What the player places: the map's regions, or their capitals. */
+const nouns = (mode: Mode) => (mode === "cities" ? CAPITALS : entry.noun);
 let map: GameMap | null = null;
 let view: MapView | null = null;
 let game: Game | null = null;
@@ -60,22 +69,27 @@ async function useMap(next: MapEntry): Promise<boolean> {
     if (!game.addStroke(stroke)) toast("Nothing left to claim there. Draw on free land.");
     render();
   };
+  view.onPin = (at) => {
+    if (game?.drop(at)) render();
+  };
   render();
   return true;
 }
 
-function loadSaved(mapId: string): SavedGame | null {
+function loadSaved(mapId: string, mode: Mode): SavedGame | null {
   try {
-    const saved = JSON.parse(localStorage.getItem(saveKey(mapId)) ?? "null") as SavedGame | null;
-    return saved?.mapId === mapId && saved.placements.length < saved.order.length ? saved : null;
+    const saved = JSON.parse(localStorage.getItem(saveKey(mapId, mode)) ?? "null") as SavedGame | null;
+    return saved?.mapId === mapId && (saved.mode ?? "borders") === mode && saved.placements.length < saved.order.length
+      ? saved
+      : null;
   } catch {
     return null;
   }
 }
 
-function loadBest(mapId: string): Record<string, number> {
+function loadBest(mapId: string, mode: Mode): Record<string, number> {
   try {
-    return JSON.parse(localStorage.getItem(bestKey(mapId)) ?? "{}");
+    return JSON.parse(localStorage.getItem(bestKey(mapId, mode)) ?? "{}");
   } catch {
     return {};
   }
@@ -99,21 +113,21 @@ function recordPlayed(seed: string, total: number): void {
 const bestFor = (count: number, easy: boolean) => (easy ? `${count}-easy` : String(count));
 
 function persist(g: Game): void {
-  const id = g.map.id;
+  const [id, mode] = [g.map.id, g.mode];
   if (g.phase === "over") {
-    localStorage.removeItem(saveKey(id));
-    const best = loadBest(id);
+    localStorage.removeItem(saveKey(id, mode));
+    const best = loadBest(id, mode);
     const key = bestFor(g.order.length, g.easy);
-    if ((best[key] ?? -1) < g.total) localStorage.setItem(bestKey(id), JSON.stringify({ ...best, [key]: g.total }));
+    if ((best[key] ?? -1) < g.total) localStorage.setItem(bestKey(id, mode), JSON.stringify({ ...best, [key]: g.total }));
     if (g.seed) recordPlayed(g.seed, g.total);
   } else {
-    localStorage.setItem(saveKey(id), JSON.stringify(g.save()));
+    localStorage.setItem(saveKey(id, mode), JSON.stringify(g.save()));
   }
 }
 
 function start(m: GameMap, seed: Seed, rival: Scores | null = null): void {
   const order = seededOrder(seed, m.regions.map((r) => r.id));
-  game = new Game(m, order, { seed: formatSeed(seed), easy: seed.easy, rival });
+  game = new Game(m, order, { seed: formatSeed(seed), mode: seed.mode, easy: seed.easy, rival });
   stopReplay();
   showTruth = false;
   endCardOpen = true;
@@ -127,6 +141,7 @@ function resume(m: GameMap, saved: SavedGame, rival: Scores | null = null): void
   game = new Game(m, saved.order, {
     placements: saved.placements,
     seed: saved.seed ?? null,
+    mode: saved.mode,
     easy: saved.easy,
     rival: rival ?? saved.rival ?? null,
   });
@@ -138,7 +153,7 @@ function resume(m: GameMap, saved: SavedGame, rival: Scores | null = null): void
 async function playSeed({ seed, rival }: Challenge): Promise<void> {
   const target = MAPS.find((m) => m.id === seed.mapId)!;
   if (!(await useMap(target)) || !map) return;
-  const saved = loadSaved(map.id);
+  const saved = loadSaved(map.id, seed.mode);
   if (saved?.seed === formatSeed(seed)) resume(map, saved, rival);
   else start(map, seed, rival);
 }
@@ -148,6 +163,7 @@ function seedProblem(seed: Seed | null): string | null {
   if (!seed) return "Paste a link or a seed like europe-10-K3F9X.";
   const target = MAPS.find((m) => m.id === seed.mapId);
   if (!target) return `No map called "${seed.mapId}".`;
+  if (seed.mode === "cities" && !target.cities) return `${target.name} has no capitals to find.`;
   if (seed.count < 1 || seed.count > target.count) return `${target.name} has ${target.count} ${target.noun[1]}.`;
   return null;
 }
@@ -202,7 +218,7 @@ function toast(message: string): void {
 function submit(): void {
   if (!game) return;
   const placement = game.submit();
-  if (!placement) return toast("Draw something first, or skip.");
+  if (!placement) return toast(game.mode === "cities" ? "Drop a pin first, or skip." : "Draw something first, or skip.");
   const points = placement.score?.points ?? 0;
   scoreSound(points);
   if (points >= 85) confetti(60);
@@ -222,7 +238,9 @@ function next(): void {
   if (!game) return;
   game.next();
   const g = game;
-  const before = loadBest(g.map.id)[bestFor(g.order.length, g.easy)];
+  const before = loadBest(g.map.id, g.mode)[bestFor(g.order.length, g.easy)];
+  // Pins are blind until the end, where seeing how far off they were is the fun part.
+  if (g.phase === "over" && g.mode === "cities") showTruth = true;
   persist(g);
   render();
   if (g.phase === "over" && celebrates(g, before)) {
@@ -261,6 +279,17 @@ function placedItems(g: Game, upTo = g.placements.length, focus = -1) {
   );
 }
 
+function placedPins(g: Game, upTo = g.placements.length, focus = -1): Pin[] {
+  return g.placements.slice(0, upTo).flatMap((p, i) =>
+    p.pin ? [{ name: g.target(p.regionId), at: p.pin, color: colorFor(i), focus: i === focus }] : [],
+  );
+}
+
+function truthPin(g: Game, p: Placement, label: boolean): TruthPin {
+  const { name, at } = g.region(p.regionId).capital!;
+  return { at, from: p.pin, name, label };
+}
+
 /** Shows the finished map as it was after placement `at`; playing moves on by itself. */
 function inspect(at: number, playing = false): void {
   const g = game;
@@ -281,7 +310,9 @@ function inspect(at: number, playing = false): void {
     }, REPLAY_MS);
   } else {
     const p = g.placements[at];
-    view?.fit([p.shape, g.region(p.regionId).geometry]);
+    const region = g.region(p.regionId);
+    if (g.mode === "cities") view?.fitBoxes([pointsBox(p.pin ? [p.pin, region.capital!.at] : [region.capital!.at])], 4);
+    else view?.fit([p.shape, region.geometry]);
   }
   render();
 }
@@ -315,20 +346,22 @@ function replayCard(g: Game, at: number, playing: boolean): HTMLElement[] {
 }
 
 function resultCard(g: Game, p: Placement): HTMLElement {
-  const name = g.region(p.regionId).name;
-  if (!p.score) return h("div", {}, h("h2", {}, name), h("p", { class: "muted" }, "Skipped. 0 points."), ...rivalLine(g, p));
+  const region = g.region(p.regionId);
+  const title = g.mode === "cities" ? h("h2", {}, g.target(p.regionId), h("small", { class: "muted" }, ` ${region.name}`)) : h("h2", {}, region.name);
+  if (!p.score) return h("div", {}, title, h("p", { class: "muted" }, "Skipped. 0 points."), ...rivalLine(g, p));
   const { points, overlap, distanceKm } = p.score;
+  const off = `${formatKm(distanceKm ?? 0)} off`;
+  const detail =
+    g.mode === "cities"
+      ? `${off}${g.easy ? " · real spot circled" : ""}`
+      : `${Math.round((overlap ?? 0) * 100)}% overlap · ${off}${g.easy ? " · real border dashed" : ""}`;
   return h(
     "div",
     {},
-    h("h2", {}, name),
+    title,
     h("div", { class: "points" }, `${points}`, h("small", {}, ` / ${MAX_POINTS}`)),
     h("p", { class: "verdict" }, verdict(points)),
-    h(
-      "p",
-      { class: "muted" },
-      `${Math.round(overlap * 100)}% overlap · ${formatKm(distanceKm ?? 0)} off${g.easy ? " · real border dashed" : ""}`,
-    ),
+    h("p", { class: "muted" }, detail),
     ...rivalLine(g, p),
   );
 }
@@ -344,7 +377,7 @@ function rivalLine(g: Game, p: Placement): HTMLElement[] {
 
 function endCard(g: Game): HTMLElement {
   const max = g.order.length * MAX_POINTS;
-  const best = loadBest(g.map.id)[bestFor(g.order.length, g.easy)] ?? g.total;
+  const best = loadBest(g.map.id, g.mode)[bestFor(g.order.length, g.easy)] ?? g.total;
   const rival = g.rival;
   const rows = g.placements
     .map((p, i) => ({ p, i, theirs: rival?.[i] }))
@@ -353,7 +386,7 @@ function endCard(g: Game): HTMLElement {
       const row = h(
         "li",
         { title: "Show it on the map" },
-        h("span", {}, g.region(p.regionId).name),
+        h("span", {}, g.target(p.regionId)),
         h("span", { class: "muted" }, p.score ? `${p.score.points}` : "skipped"),
         ...(rival ? [h("span", { class: "muted" }, theirs === null ? "skipped" : `${theirs}`)] : []),
       );
@@ -366,18 +399,18 @@ function endCard(g: Game): HTMLElement {
     showTruth = truthToggle.checked;
     render();
   });
-  const many = entry.noun[1];
+  const many = nouns(g.mode)[1];
   return h(
     "div",
     { class: "card end" },
-    h("h1", {}, `${g.map.name}, according to you`),
+    h("h1", {}, `${g.title}, according to you`),
     h("div", { class: "points" }, `${g.total}`, h("small", {}, ` / ${max}`)),
     ...(rival ? [duel(g, rival)] : []),
     h("p", { class: "muted" }, `Best on ${g.order.length} ${many}${g.easy ? " in easy mode" : ""}: ${best}`),
     ...awardList(g),
     ...(rival ? [h("p", { class: "ranking-head muted" }, h("span", {}, "You"), h("span", {}, "Friend"))] : []),
     h("ol", { class: rival ? "ranking vs" : "ranking" }, ...rows),
-    h("label", { class: "toggle" }, truthToggle, " Show the real borders"),
+    h("label", { class: "toggle" }, truthToggle, g.mode === "cities" ? " Show the real cities" : " Show the real borders"),
     ...(g.seed
       ? [
           h(
@@ -430,7 +463,7 @@ function duel(g: Game, rival: Scores): HTMLElement {
     "div",
     { class: "duel" },
     h("strong", {}, headline),
-    h("span", { class: "muted" }, `Friend: ${theirs} · ${entry.noun[1]} won ${won}, lost ${lost}`),
+    h("span", { class: "muted" }, `Friend: ${theirs} · ${nouns(g.mode)[1]} won ${won}, lost ${lost}`),
   );
 }
 
@@ -456,8 +489,8 @@ function showPicker(): void {
   stopReplay();
   showTruth = false;
   const cards = MAPS.map((m) => {
-    const saved = loadSaved(m.id);
-    const best = loadBest(m.id)[String(m.count)];
+    const saved = loadSaved(m.id, modeOf(m));
+    const best = loadBest(m.id, modeOf(m))[String(m.count)];
     const status = saved
       ? `In progress: ${saved.placements.length}/${saved.order.length}`
       : best !== undefined
@@ -466,7 +499,7 @@ function showPicker(): void {
     const card = button("", () => void pick(m), m === entry ? "map-card current" : "map-card");
     card.append(
       h("strong", {}, m.name),
-      h("span", { class: "muted" }, `${m.count} ${m.noun[1]}`),
+      h("span", { class: "muted" }, `${m.count} ${m.noun[1]}${m.cities ? ", or their capitals" : ""}`),
       h("span", { class: "muted" }, status),
     );
     return card;
@@ -476,7 +509,7 @@ function showPicker(): void {
       "div",
       { class: "card start" },
       h("h1", {}, "Frontiers"),
-      h("p", { class: "lead" }, "Draw borders from memory, on a map that has none. Pick a map:"),
+      h("p", { class: "lead" }, "Draw borders or find capitals from memory, on a map that has neither. Pick a map:"),
       ...streakLine(),
       h("div", { class: "maps" }, ...cards),
       seedForm(),
@@ -528,14 +561,16 @@ function showStart(): void {
   showTruth = false;
   view?.resetZoom();
   // A save from an older version of the map (say, with Alaska) can't be resumed.
+  const mode = modeOf(entry);
   const ids = new Set(m.regions.map((r) => r.id));
-  const stored = loadSaved(m.id);
+  const stored = loadSaved(m.id, mode);
   const saved = stored?.order.every((id) => ids.has(id)) ? stored : null;
-  if (stored && !saved) localStorage.removeItem(saveKey(m.id));
-  const best = loadBest(m.id);
+  if (stored && !saved) localStorage.removeItem(saveKey(m.id, mode));
+  const best = loadBest(m.id, mode);
   const n = m.regions.length;
-  const [one, many] = entry.noun;
+  const [one, many] = nouns(mode);
   const easy = localStorage.getItem(EASY_KEY) === "1";
+  const setup = (count: number): Setup => ({ mapId: m.id, count, easy, mode });
   const easyToggle = h("input", { type: "checkbox", id: "easy-toggle" }) as HTMLInputElement;
   easyToggle.checked = easy;
   easyToggle.addEventListener("change", () => {
@@ -546,25 +581,17 @@ function showStart(): void {
     h(
       "div",
       { class: "card start" },
-      h("h1", {}, m.name),
-      h("p", { class: "lead" }, entry.question),
-      h(
-        "ul",
-        {},
-        h("li", {}, `You get ${an(one)}. Draw its borders on the map by dragging a loop around it.`),
-        h("li", {}, "Edges are free: your drawing is cut to the land. Draw more loops to add islands."),
-        h("li", {}, `Land you already gave to ${an(one)} is taken. Next ${many} fit around your mistakes.`),
-        h(
-          "li",
-          {},
-          `Score: up to 100 per ${one}, for the overlap with the real thing and for being in the right place. The real borders show up only at the end.`,
-        ),
-      ),
+      h("h1", {}, mode === "cities" ? `${m.name} capitals` : m.name),
+      ...modeSwitch(mode),
+      h("p", { class: "lead" }, mode === "cities" ? entry.cities!.question : entry.question),
+      h("ul", {}, ...rules(m, mode).map((rule) => h("li", {}, rule))),
       h(
         "label",
         { class: "toggle" },
         easyToggle,
-        ` Easy mode: show the real border right after each ${one}`,
+        mode === "cities"
+          ? " Easy mode: show where each capital really is right after you pin it"
+          : ` Easy mode: show the real border right after each ${one}`,
       ),
       h(
         "div",
@@ -576,12 +603,12 @@ function showStart(): void {
                 "primary",
               )]
           : []),
-        dailyButton(m, Math.min(n, QUICK_COUNT), easy),
-        button(`All ${n} ${many}${bestLine(best, n, easy)}`, () => start(m, newSeed(m.id, n, easy)), saved ? "" : "primary"),
+        dailyButton(m, setup(Math.min(n, QUICK_COUNT))),
+        button(`All ${n} ${many}${bestLine(best, n, easy)}`, () => start(m, newSeed(setup(n))), saved ? "" : "primary"),
         ...(n > QUICK_FROM
           ? [
               button(`Quick game: ${QUICK_COUNT}${bestLine(best, QUICK_COUNT, easy)}`, () =>
-                start(m, newSeed(m.id, QUICK_COUNT, easy)),
+                start(m, newSeed(setup(QUICK_COUNT))),
               ),
             ]
           : []),
@@ -592,9 +619,42 @@ function showStart(): void {
   render();
 }
 
+/** Borders or capitals, on maps that have both. */
+function modeSwitch(mode: Mode): HTMLElement[] {
+  if (!entry.cities) return [];
+  const choice = (value: Mode, text: string) => {
+    const b = button(text, () => {
+      localStorage.setItem(MODE_KEY, value);
+      showStart();
+    });
+    b.setAttribute("aria-pressed", String(mode === value));
+    return b;
+  };
+  return [h("div", { class: "modes", role: "group", "aria-label": "Mode" }, choice("borders", "Borders"), choice("cities", "Capitals"))];
+}
+
+function rules(m: GameMap, mode: Mode): string[] {
+  const [one, many] = nouns(mode);
+  if (mode === "cities") {
+    const tap = touchScreen() ? "Tap" : "Click";
+    return [
+      `You get ${an(one)}. ${tap} where you think it is to drop a pin; ${tap.toLowerCase()} again to move it. Drag to pan.`,
+      "The map shows coasts but no borders and no cities.",
+      `Score: up to 100 per ${one}. Within ${formatKm(BULLSEYE_SHARE * m.width * m.kmPerUnit)} is a bullseye; points drop off with distance after that. The real spots show up only at the end.`,
+    ];
+  }
+  return [
+    `You get ${an(one)}. Draw its borders on the map by dragging a loop around it.`,
+    "Edges are free: your drawing is cut to the land. Draw more loops to add islands.",
+    `Land you already gave to ${an(one)} is taken. Next ${many} fit around your mistakes.`,
+    `Score: up to 100 per ${one}, for the overlap with the real thing and for being in the right place. The real borders show up only at the end.`,
+  ];
+}
+
 /** Same seed for everyone today: friends can compare without sending anything first. */
-function dailyButton(m: GameMap, count: number, easy: boolean): HTMLButtonElement {
-  const seed = dailySeed(m.id, count, easy);
+function dailyButton(m: GameMap, setup: Setup): HTMLButtonElement {
+  const { count } = setup;
+  const seed = dailySeed(setup);
   const played = loadPlayed()[formatSeed(seed)];
   const days = streak(Object.keys(loadPlayed()));
   const label = `Today's ${count}${played === undefined ? (days ? ` · 🔥 ${days}` : "") : ` · you scored ${played}`}`;
@@ -614,15 +674,16 @@ function streakLine(): HTMLElement[] {
 /** Landing screen for a link a friend sent. */
 async function showChallenge({ seed, rival }: Challenge): Promise<void> {
   const target = MAPS.find((m) => m.id === seed.mapId)!;
-  const [, many] = target.noun;
+  const cities = seed.mode === "cities";
+  const many = cities ? CAPITALS[1] : target.noun[1];
   const played = loadPlayed()[formatSeed(seed)];
-  const what = `${target.name}, ${seed.count} ${many}${seed.easy ? ", easy mode" : ""}.`;
+  const what = `${target.name}${cities ? " capitals" : ""}, ${seed.count} ${many}${seed.easy ? ", easy mode" : ""}.`;
   $("overlay").replaceChildren(
     h(
       "div",
       { class: "card start" },
       h("h1", {}, rival ? "You've been challenged" : "Frontiers"),
-      h("p", { class: "lead" }, "Draw borders from memory, on a map that has none."),
+      h("p", { class: "lead" }, cities ? "Find capitals from memory, on a map that has none." : "Draw borders from memory, on a map that has none."),
       h(
         "p",
         {},
@@ -651,32 +712,54 @@ function render(): void {
   const shown = g?.phase === "over" ? replay : null;
   view.setPlaced(!g ? [] : shown ? placedItems(g, shown.at + 1, shown.at) : placedItems(g));
   view.setDraft(g?.draft ?? [], colorFor(g?.placements.length ?? 0));
-  view.drawingEnabled = g?.phase === "drawing";
-  if (!g) return view.setTruth([]);
+  const cities = g?.mode === "cities";
+  view.drawingEnabled = g?.phase === "drawing" && !cities;
+  view.pinEnabled = g?.phase === "drawing" && cities;
+  setHints(cities);
+  if (!g) {
+    view.setPins([]);
+    view.setTruthPins([]);
+    return view.setTruth([]);
+  }
 
   const last = g.lastPlacement;
-  // Real borders stay hidden until the end, as they give away the neighbours. Easy mode shows
-  // each one while its score is up.
-  if (shown) view.setTruth([g.region(g.placements[shown.at].regionId).geometry]);
-  else if (g.phase === "over") view.setTruth(showTruth ? g.order.map((r) => r.geometry) : []);
-  else view.setTruth(g.easy && g.phase === "reveal" && last ? [g.region(last.regionId).geometry] : []);
+  // Real borders and cities stay hidden until the end, as they give away the neighbours. Easy
+  // mode shows each one while its score is up.
+  const revealed = shown
+    ? [g.placements[shown.at]]
+    : g.phase === "over"
+      ? showTruth ? g.placements : []
+      : g.easy && g.phase === "reveal" && last ? [last] : [];
+  if (cities) {
+    const draft: Pin[] = g.pin ? [{ name: g.target(g.current!.id), at: g.pin, color: colorFor(g.placements.length), draft: true }] : [];
+    view.setPins(shown ? placedPins(g, shown.at + 1, shown.at) : [...placedPins(g), ...draft]);
+    view.setTruthPins(revealed.map((p) => truthPin(g, p, revealed.length === 1)));
+    view.setTruth([]);
+  } else {
+    view.setPins([]);
+    view.setTruthPins([]);
+    view.setTruth(g.phase === "over" && !shown && showTruth ? g.order.map((r) => r.geometry) : revealed.map((p) => g.region(p.regionId).geometry));
+  }
 
   const done = g.placements.length;
-  $("map-name").textContent = g.easy ? `${g.map.name} · easy mode` : g.map.name;
+  $("map-name").textContent = g.easy ? `${g.title} · easy mode` : g.title;
   $("progress").textContent = `${Math.min(done + (g.phase === "drawing" ? 1 : 0), g.order.length)} / ${g.order.length}`;
   $("total").textContent = `${g.total} pts`;
   const seedButton = $("seed");
   seedButton.hidden = !g.seed;
   seedButton.replaceChildren("Invite ", h("code", {}, g.seed ?? ""));
   const prompt = $("prompt");
-  if (g.phase === "drawing") prompt.replaceChildren("Draw ", h("strong", {}, g.current!.name));
-  else if (g.phase === "reveal") prompt.replaceChildren(h("strong", {}, g.region(last!.regionId).name));
+  if (g.phase === "drawing" && cities) {
+    prompt.replaceChildren("Place ", h("strong", {}, g.target(g.current!.id)), h("span", { class: "muted" }, `, ${g.current!.name}`));
+  } else if (g.phase === "drawing") prompt.replaceChildren("Draw ", h("strong", {}, g.current!.name));
+  else if (g.phase === "reveal") prompt.replaceChildren(h("strong", {}, g.target(last!.regionId)));
   else prompt.replaceChildren(h("strong", {}, shown ? "Replay" : "Finished"));
 
   $("tools").hidden = g.phase !== "drawing";
+  for (const id of ["undo", "clear", "eraser"]) $(id).hidden = cities;
   $<HTMLButtonElement>("undo").disabled = g.strokes.length === 0;
   $<HTMLButtonElement>("clear").disabled = g.strokes.length === 0;
-  $<HTMLButtonElement>("submit").disabled = g.draft.length === 0;
+  $<HTMLButtonElement>("submit").disabled = cities ? !g.pin : g.draft.length === 0;
 
   const result = $("result");
   result.hidden = g.phase !== "reveal" && !shown;
@@ -684,7 +767,7 @@ function render(): void {
   else if (g.phase === "reveal" && last) {
     result.replaceChildren(
       resultCard(g, last),
-      withKey(button(g.current ? `Next ${entry.noun[0]}` : "See the results", next, "primary")),
+      withKey(button(g.current ? `Next ${nouns(g.mode)[0]}` : "See the results", next, "primary")),
     );
   }
   if (g.phase === "over") {
@@ -693,6 +776,20 @@ function render(): void {
   } else {
     $("results-button").hidden = true;
   }
+}
+
+const HINTS = {
+  borders: {
+    mouse: "Drag to draw · Shift-drag to erase · Scroll to zoom · Space-drag or right-drag to pan",
+    touch: "Draw with one finger · Pinch to zoom · Two fingers to pan",
+  },
+  cities: { mouse: "Click to drop a pin · Drag to pan · Scroll to zoom", touch: "Tap to drop a pin · Drag to pan · Pinch to zoom" },
+};
+
+function setHints(cities: boolean): void {
+  const hints = HINTS[cities ? "cities" : "borders"];
+  $("hint-mouse").textContent = hints.mouse;
+  $("hint-touch").textContent = hints.touch;
 }
 
 $("undo").addEventListener("click", () => {
@@ -732,7 +829,7 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     game.undo();
     render();
-  } else if (e.key === "e" && game.phase === "drawing") {
+  } else if (e.key === "e" && game.phase === "drawing" && game.mode === "borders") {
     setEraser(!view?.eraseMode);
   } else if (e.key === "Escape") {
     game.clear();

@@ -5,7 +5,7 @@ import { geoAzimuthalEqualArea } from "d3-geo";
 import { merge } from "topojson-client";
 import { presimplify, simplify } from "topojson-simplify";
 import world from "world-atlas/countries-50m.json" with { type: "json" };
-import { countryIndex, displayName, frame, shape, slug, split, within, writeMap } from "./lib.mjs";
+import { capitalFinder, countryIndex, displayName, frame, shape, slug, split, within, writeMap } from "./lib.mjs";
 
 const MIN_WEIGHT = 2e-7;
 
@@ -32,6 +32,8 @@ const height = frame(projection, { type: "MultiPoint", coordinates: FRAME_POINTS
 const mainland = (lonlat) => split(lonlat, within([-30, -40, 60, 40]))[0];
 const inPlay = new Set(REGIONS.flat());
 
+const capital = await capitalFinder(projection);
+
 writeMap({
   id: "africa",
   name: "Africa",
@@ -39,7 +41,8 @@ writeMap({
   projection,
   regions: REGIONS.map((names) => {
     const name = displayName(names[0]);
-    return { id: slug(name), name, geometry: shape(mainland(merge(simple, named(names))), projection) };
+    const lonlat = mainland(merge(simple, named(names)));
+    return { id: slug(name), name, geometry: shape(lonlat, projection), capital: capital(name, lonlat) };
   }).sort((a, b) => a.name.localeCompare(b.name)),
   context: geometries
     .filter((g) => g.properties?.name && !inPlay.has(g.properties.name))

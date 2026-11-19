@@ -1,29 +1,33 @@
-// A seed names a game: the map, how many regions, a code that fixes their order, and the mode.
-// Two players on the same seed get the same regions in the same order.
-import { shuffle } from "./game.ts";
+// A seed names a game: the map, borders or cities, how many regions, a code that fixes their
+// order, and easy mode. Two players on the same seed get the same regions in the same order.
+import { shuffle, type Mode } from "./game.ts";
 
 export interface Seed {
   mapId: string;
+  mode: Mode;
   count: number;
   code: string;
   easy: boolean;
 }
 
+/** A seed without its code: what the player picked. */
+export type Setup = Omit<Seed, "code">;
+
 // No 0/O, 1/I/L: seeds get read out loud and retyped.
 const ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const CODE_LENGTH = 5;
 
-export function newSeed(mapId: string, count: number, easy: boolean, random: () => number = Math.random): Seed {
+export function newSeed(setup: Setup, random: () => number = Math.random): Seed {
   const code = Array.from({ length: CODE_LENGTH }, () => ALPHABET[Math.floor(random() * ALPHABET.length)]).join("");
-  return { mapId, count, code, easy };
+  return { ...setup, code };
 }
 
 export const dayCode = (day: Date) =>
   [day.getFullYear(), day.getMonth() + 1, day.getDate()].map((n) => String(n).padStart(2, "0")).join("");
 
 /** Today's game: the same for everyone on the same day, e.g. europe-10-20261118. */
-export function dailySeed(mapId: string, count: number, easy: boolean, today = new Date()): Seed {
-  return { mapId, count, code: dayCode(today), easy };
+export function dailySeed(setup: Setup, today = new Date()): Seed {
+  return { ...setup, code: dayCode(today) };
 }
 
 /**
@@ -40,18 +44,29 @@ export function streak(playedSeeds: Iterable<string>, today = new Date()): numbe
 }
 
 const EASY_SUFFIX = "-easy";
-const orderKey = ({ mapId, count, code }: Seed) => `${mapId}-${count}-${code}`;
+// After the map id: europe-cities-10-K3F9X. Seeds from before cities have no mode, and are borders.
+const CITIES_SUFFIX = "-cities";
+const orderKey = ({ mapId, mode, count, code }: Seed) =>
+  `${mapId}${mode === "cities" ? CITIES_SUFFIX : ""}-${count}-${code}`;
 export const formatSeed = (seed: Seed) => orderKey(seed) + (seed.easy ? EASY_SUFFIX : "");
 
 /** Reads a pasted seed, forgiving case and stray spaces; null if it isn't one. */
 export function parseSeed(text: string): Seed | null {
   const match = /^([a-z]+(?:-[a-z]+)*)-(\d{1,3})-([a-z0-9]{1,16})(-easy)?$/i.exec(text.trim());
   if (!match) return null;
-  return { mapId: match[1].toLowerCase(), count: Number(match[2]), code: match[3].toUpperCase(), easy: !!match[4] };
+  const name = match[1].toLowerCase();
+  const cities = name.endsWith(CITIES_SUFFIX);
+  return {
+    mapId: cities ? name.slice(0, -CITIES_SUFFIX.length) : name,
+    mode: cities ? "cities" : "borders",
+    count: Number(match[2]),
+    code: match[3].toUpperCase(),
+    easy: !!match[4],
+  };
 }
 
 /**
- * The regions the seed plays, in order, the same in both modes. Sorting first keeps it
+ * The regions the seed plays, in order, the same with or without easy mode. Sorting first keeps it
  * independent of the map file's order.
  */
 export function seededOrder(seed: Seed, regionIds: readonly string[]): string[] {

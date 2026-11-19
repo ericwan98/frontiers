@@ -4,7 +4,7 @@ import { geoAzimuthalEqualArea } from "d3-geo";
 import { merge } from "topojson-client";
 import { presimplify, simplify } from "topojson-simplify";
 import world from "world-atlas/countries-50m.json" with { type: "json" };
-import { countryIndex, frame, moveCrimea, shape as project, writeMap } from "./lib.mjs";
+import { capitalFinder, countryIndex, frame, moveCrimea, shape as project, writeMap } from "./lib.mjs";
 
 // Square degrees (topojson-simplify's planar default): drops only the tiniest wiggles of the 50m data.
 const MIN_WEIGHT = 2e-7;
@@ -71,11 +71,18 @@ const LONLAT = Object.fromEntries(Object.entries(REGIONS).map(([id, [, names]]) 
 const inPlay = new Set(Object.values(REGIONS).flatMap(([, names]) => names));
 const context = geoms.filter((g) => g.properties?.name && !inPlay.has(g.properties.name)).map((g) => shape(merge(simple, [g])));
 
+const capital = await capitalFinder(projection);
+
 writeMap({
   id: "europe",
   name: "Europe",
   height,
   projection,
-  regions: Object.entries(REGIONS).map(([id, [name]]) => ({ id, name, geometry: shape(LONLAT[id]) })),
+  regions: Object.entries(REGIONS).map(([id, [name]]) => ({
+    id,
+    name,
+    geometry: shape(LONLAT[id]),
+    capital: capital(name, LONLAT[id]),
+  })),
   context,
 });

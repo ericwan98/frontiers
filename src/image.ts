@@ -26,7 +26,7 @@ export async function renderPng(g: Game, svg: SVGSVGElement): Promise<Blob> {
     ctx.fillStyle = "#1f2328";
     ctx.textBaseline = "middle";
     ctx.font = "800 26px system-ui, sans-serif";
-    ctx.fillText(`${g.map.name}, according to me`, 20, HEADER / 2);
+    ctx.fillText(`${g.title}, according to me`, 20, HEADER / 2);
     ctx.textAlign = "right";
     ctx.fillStyle = "#fa500f";
     ctx.fillText(`${g.total} / ${g.order.length * MAX_POINTS}`, width - 20, HEADER / 2);

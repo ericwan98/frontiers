@@ -1,11 +1,11 @@
 import type { GameMap } from "./game.ts";
-import { area, centroid, intersection, type MultiPolygon } from "./geometry.ts";
+import { area, centroid, intersection, type MultiPolygon, type Pair } from "./geometry.ts";
 
 export interface Score {
   points: number;
-  /** Intersection over union of the drawing and the real country, 0..1. */
-  overlap: number;
-  /** Distance between the two centroids; null when nothing was drawn. */
+  /** Intersection over union of the drawing and the real country, 0..1; absent for a pin. */
+  overlap?: number;
+  /** Distance between the two centroids, or the pin and the city; null when nothing was drawn. */
   distanceKm: number | null;
 }
 
@@ -33,6 +33,17 @@ export function score(drawn: MultiPolygon, truth: MultiPolygon, map: Pick<GameMa
 
   const points = Math.round(MAX_POINTS * (OVERLAP_WEIGHT * overlap + (1 - OVERLAP_WEIGHT) * closeness));
   return { points, overlap, distanceKm };
+}
+
+// A pin this close, as a share of the map width, scores full marks: about 160 km on the world
+// map, 23 km on Europe. Past it, points fall by a factor e every FALLOFF_SHARE of the width.
+export const BULLSEYE_SHARE = 0.005;
+const FALLOFF_SHARE = 0.05;
+
+export function pinScore(pin: Pair, truth: Pair, map: Pick<GameMap, "width" | "kmPerUnit">): Score {
+  const distance = Math.hypot(pin[0] - truth[0], pin[1] - truth[1]);
+  const off = Math.max(0, distance - BULLSEYE_SHARE * map.width) / (FALLOFF_SHARE * map.width);
+  return { points: Math.round(MAX_POINTS * Math.exp(-off)), distanceKm: distance * map.kmPerUnit };
 }
 
 /** Score bands, best first: a name for the result card and a square for shared results. */

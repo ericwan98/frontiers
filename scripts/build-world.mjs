@@ -4,7 +4,7 @@
 import { geoArea, geoEqualEarth } from "d3-geo";
 import { merge } from "topojson-client";
 import world from "world-atlas/countries-110m.json" with { type: "json" };
-import { countryIndex, displayName, frame, moveCrimea, ringArea, shape as project, slug, split, within, writeMap } from "./lib.mjs";
+import { capitalFinder, countryIndex, displayName, frame, moveCrimea, ringArea, shape as project, slug, split, within, writeMap } from "./lib.mjs";
 
 // Square units (about 1,100 km²): islands smaller than this can't be drawn at this scale anyway.
 const MIN_ISLAND = 1;
@@ -52,13 +52,18 @@ const height = frame(projection, {
   geometries: playable.map(([, geometry]) => geometry),
 });
 
+const capital = await capitalFinder(projection);
+
 writeMap({
   id: "world",
   name: "World",
   height,
   projection,
   regions: playable
-    .map(([ne, geometry]) => ({ id: slug(displayName(ne)), name: displayName(ne), geometry: shape(geometry) }))
+    .map(([ne, geometry]) => {
+      const name = displayName(ne);
+      return { id: slug(name), name, geometry: shape(geometry), capital: capital(name, geometry) };
+    })
     .sort((a, b) => a.name.localeCompare(b.name)),
   context: [
     ...[...lonlat].filter(([name]) => !inPlay.has(name)).map(([, geometry]) => shape(geometry)),

@@ -67,6 +67,26 @@ export function bbox(shape: MultiPolygon): Box {
   return box;
 }
 
+/** The box around a few points, e.g. a pin and the city it was meant for. */
+export function pointsBox(points: Pair[]): Box {
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+/** Whether `point` is inside `shape`, holes excluded (even-odd rule). */
+export function contains(shape: MultiPolygon, [px, py]: Pair): boolean {
+  let inside = false;
+  for (const polygon of shape)
+    for (const ring of polygon)
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i];
+        const [xj, yj] = ring[j];
+        if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+  return inside;
+}
+
 /** Where to put a label: the centroid of the largest piece. */
 export function labelPoint(shape: MultiPolygon): Pair | null {
   let best: MultiPolygon = [];

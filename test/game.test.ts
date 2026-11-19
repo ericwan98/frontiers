@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { awards } from "../src/awards.ts";
 import { Game, shuffle, type GameMap } from "../src/game.ts";
-import { area, centroid, simplify, type MultiPolygon, type Ring } from "../src/geometry.ts";
+import { area, centroid, contains, simplify, type MultiPolygon, type Ring } from "../src/geometry.ts";
 import europe from "../src/maps/europe.json";
 import { MAPS } from "../src/maps/index.ts";
-import { score, square as tierSquare } from "../src/scoring.ts";
+import { pinScore, score, square as tierSquare } from "../src/scoring.ts";
 import { dailySeed, formatSeed, newSeed, parseSeed, seededOrder, streak } from "../src/seed.ts";
 import { readChallenge, readPasted, shareText } from "../src/share.ts";
 
@@ -31,8 +31,8 @@ const tiny: GameMap = {
   land: [[[[0, 0], [20, 0], [20, 10], [0, 10], [0, 0]]]],
   context: [],
   regions: [
-    { id: "a", name: "A", geometry: square(0, 0, 10) },
-    { id: "b", name: "B", geometry: square(10, 0, 10) },
+    { id: "a", name: "A", geometry: square(0, 0, 10), capital: { name: "Ay", at: [5, 5] } },
+    { id: "b", name: "B", geometry: square(10, 0, 10), capital: { name: "Bee", at: [15, 5] } },
   ],
 };
 
@@ -65,6 +65,21 @@ describe("score", () => {
   });
 });
 
+describe("pinScore", () => {
+  const map = { width: 1000, kmPerUnit: 5 };
+
+  it("gives full marks within the bullseye, then less the farther off", () => {
+    expect(pinScore([500, 500], [500, 500], map)).toEqual({ points: 100, distanceKm: 0 });
+    expect(pinScore([504, 500], [500, 500], map).points).toBe(100);
+    const near = pinScore([530, 500], [500, 500], map);
+    const far = pinScore([700, 500], [500, 500], map);
+    expect(near.distanceKm).toBe(150);
+    expect(near.points).toBeLessThan(100);
+    expect(far.points).toBeLessThan(near.points);
+    expect(pinScore([1000, 0], [0, 1000], map).points).toBe(0);
+  });
+});
+
 describe("Game", () => {
   it("clips drawings to land and never overlaps an earlier country", () => {
     const game = new Game(tiny, ["a", "b"]);
@@ -94,6 +109,29 @@ describe("Game", () => {
     expect(game.total).toBe(placement.score!.points);
   });
 
+  it("plays capitals with pins, blind to the borders", () => {
+    const game = new Game(tiny, ["a", "b"], { mode: "cities" });
+    expect(game.title).toBe("Tiny capitals");
+    expect(game.target("a")).toBe("Ay");
+    expect(game.submit()).toBeUndefined();
+    expect(game.drop([9, 9])).toBe(true);
+    expect(game.drop([5, 5])).toBe(true);
+    const placed = game.submit()!;
+    expect(placed).toMatchObject({ regionId: "a", pin: [5, 5], shape: [], score: { points: 100, distanceKm: 0 } });
+    expect(game.drop([1, 1])).toBe(false);
+    game.next();
+    expect(game.pin).toBeNull();
+    const saved = JSON.parse(JSON.stringify(game.save()));
+    const resumed = new Game(tiny, saved.order, saved);
+    expect(resumed.mode).toBe("cities");
+    expect(resumed.placements[0].pin).toEqual([5, 5]);
+  });
+
+  it("refuses capitals mode on a map without capitals", () => {
+    const bare = { ...tiny, regions: tiny.regions.map(({ capital: _, ...r }) => r) };
+    expect(() => new Game(bare, ["a"], { mode: "cities" })).toThrow("a has no capital");
+  });
+
   it("resumes from a save", () => {
     const game = new Game(tiny, ["a", "b"]);
     game.addStroke({ ring: loopOf(0, 0, 10), erase: false });
@@ -114,6 +152,24 @@ describe.each(MAPS)("$name map", (entry) => {
     expect(new Set(ids).size).toBe(ids.length);
     for (const r of map.regions) expect(area(r.geometry)).toBeGreaterThan(0);
   });
+
+  it(entry.cities ? "has a capital for every region, inside the frame" : "has no capitals mode", async () => {
+    const map = await entry.load();
+    expect(map.regions.every((r) => r.capital)).toBe(!!entry.cities);
+    for (const { capital } of map.regions) {
+      if (!capital) continue;
+      const [x, y] = capital.at;
+      expect(x >= 0 && x <= map.width && y >= 0 && y <= map.height, capital.name).toBe(true);
+    }
+  });
+});
+
+it("puts capitals in their country", async () => {
+  const map = await MAPS.find((m) => m.id === "europe")!.load();
+  const capitalOf = (name: string) => map.regions.find((r) => r.name === name)!.capital!;
+  expect(capitalOf("France").name).toBe("Paris");
+  expect(capitalOf("Netherlands").name).toBe("Amsterdam");
+  expect(contains(map.regions.find((r) => r.name === "Germany")!.geometry, capitalOf("Germany").at)).toBe(true);
 });
 
 // Real areas, give or take generalisation and water: an equal-area projection keeps them.
@@ -168,23 +224,28 @@ describe("seed", () => {
   const ids = (europe as GameMap).regions.map((r) => r.id);
 
   it("round-trips, forgiving case and spaces", () => {
-    const seed = newSeed("europe", 10, false);
+    const seed = newSeed({ mapId: "europe", count: 10, easy: false, mode: "borders" });
     expect(formatSeed(seed)).toMatch(/^europe-10-[2-9A-Z]{5}$/);
     expect(parseSeed(` ${formatSeed(seed).toLowerCase()} `)).toEqual(seed);
-    const easy = newSeed("paris", 20, true);
+    const easy = newSeed({ mapId: "paris", count: 20, easy: true, mode: "borders" });
     expect(formatSeed(easy)).toMatch(/^paris-20-[2-9A-Z]{5}-easy$/);
     expect(parseSeed(formatSeed(easy))).toEqual(easy);
     expect(parseSeed("europe 10 ABCDE")).toBeNull();
+    const cities = newSeed({ mapId: "south-america", count: 12, easy: true, mode: "cities" });
+    expect(formatSeed(cities)).toMatch(/^south-america-cities-12-[2-9A-Z]{5}-easy$/);
+    expect(parseSeed(formatSeed(cities))).toEqual(cities);
   });
 
   it("gives everyone the same order, whatever the order of the map file", () => {
-    const seed = { mapId: "europe", count: 10, code: "K3F9X", easy: false };
+    const seed = { mapId: "europe", count: 10, code: "K3F9X", easy: false, mode: "borders" as const };
     const order = seededOrder(seed, ids);
     expect(order).toHaveLength(10);
     expect(new Set(order).size).toBe(10);
     expect(seededOrder(seed, [...ids].reverse())).toEqual(order);
     expect(seededOrder({ ...seed, code: "K3F9Y" }, ids)).not.toEqual(order);
     expect(seededOrder({ ...seed, easy: true }, ids)).toEqual(order);
+    // Capitals of the day aren't the countries of the day.
+    expect(seededOrder({ ...seed, mode: "cities" }, ids)).not.toEqual(order);
   });
 
   it("is saved with the game, with the mode", () => {
@@ -223,10 +284,43 @@ describe("awards", () => {
     expect(shareText(finished(loopOf(0, 0, 20)), "squares")).toContain("\n🏴‍☠️ My A took 100% of B\n");
     expect(shareText(finished(loopOf(0, 0, 10)), "squares")).not.toContain("🎯");
   });
+
+  describe("capitals", () => {
+    const pinned = (...pins: [number, number][]) => {
+      const game = new Game(tiny, ["a", "b"], { seed: "tiny-cities-2-ABCDE", mode: "cities" });
+      for (const pin of pins) {
+        game.drop(pin);
+        game.submit();
+        game.next();
+      }
+      return game;
+    };
+
+    it("calls out a capital in the sea or the wrong country", () => {
+      expect(said(pinned([5, 5], [25, 5]))).toEqual([
+        "🌊 Your Bee is underwater",
+        "🧭 Your Bee is 10 km from home",
+        "🎯 Your Ay is spot on",
+      ]);
+      expect(said(pinned([15, 5], [15, 5]))).toEqual([
+        "🛂 Your Ay is in B",
+        "🧭 Your Ay is 10 km from home",
+        "🎯 Your Bee is spot on",
+      ]);
+    });
+
+    it("leaves the bullseye out of the result", () => {
+      globalThis.location = new URL("https://frontiers.example/") as unknown as Location;
+      const lines = shareText(pinned([5, 5], [25, 5]), "capitals").split("\n");
+      expect(lines[0]).toBe("Frontiers · Tiny capitals, 2 capitals");
+      expect(lines).toContain("🌊 My Bee is underwater");
+      expect(lines.join("\n")).not.toContain("🎯");
+    });
+  });
 });
 
 describe("sharing", () => {
-  const seed = { mapId: "europe", count: 3, code: "K3F9X", easy: false };
+  const seed = { mapId: "europe", count: 3, code: "K3F9X", easy: false, mode: "borders" as const };
 
   it("reads a challenge link with the sender's scores", () => {
     const link = "https://frontiers.example/?seed=europe-3-K3F9X&vs=72.x.100";
@@ -265,15 +359,26 @@ describe("sharing", () => {
   });
 
   it("names today's seed after the date", () => {
-    expect(formatSeed(dailySeed("france", 10, false, new Date(2026, 10, 8)))).toBe("france-10-20261108");
+    expect(formatSeed(dailySeed({ mapId: "france", count: 10, easy: false, mode: "borders" }, new Date(2026, 10, 8)))).toBe(
+      "france-10-20261108",
+    );
+    expect(formatSeed(dailySeed({ mapId: "europe", count: 10, easy: false, mode: "cities" }, new Date(2026, 10, 8)))).toBe(
+      "europe-cities-10-20261108",
+    );
   });
 
   it("reads seeds of maps with a hyphen in their id", () => {
-    expect(parseSeed("south-america-12-K3F9X-easy")).toEqual({ mapId: "south-america", count: 12, code: "K3F9X", easy: true });
+    expect(parseSeed("south-america-12-K3F9X-easy")).toEqual({
+      mapId: "south-america",
+      count: 12,
+      code: "K3F9X",
+      easy: true,
+      mode: "borders",
+    });
   });
 
   it("counts a streak of daily games across months, maps and modes", () => {
-    const played = ["us-10-20261031", "europe-10-20261101-easy", "paris-10-K3F9X", "france-10-20261102"];
+    const played = ["us-10-20261031", "europe-cities-10-20261101-easy", "paris-10-K3F9X", "france-10-20261102"];
     expect(streak(played, new Date(2026, 10, 2))).toBe(3);
     // Today's not played yet: the streak holds until midnight.
     expect(streak(played, new Date(2026, 10, 3))).toBe(3);

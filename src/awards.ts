@@ -1,6 +1,6 @@
 // End-of-game superlatives: the funniest things a finished map says about its author.
 import type { Game, Placement } from "./game.ts";
-import { area, bbox, intersection, type Box } from "./geometry.ts";
+import { area, bbox, contains, intersection, type Box } from "./geometry.ts";
 
 export interface Award {
   emoji: string;
@@ -9,6 +9,8 @@ export interface Award {
   regionId: string;
   /** The award as a sentence, about "Your" or "My" map. */
   says: (whose: "Your" | "My") => string;
+  /** Praise rather than a blunder: shared results leave it out. */
+  good?: boolean;
 }
 
 /** Share of a region another drawing must cover to count as a takeover. */
@@ -16,8 +18,9 @@ const TAKEOVER_MIN = 0.25;
 const INFLATED_MIN = 1.8;
 const SHRUNK_MAX = 0.4;
 const SNIPER_MIN = 0.7;
-/** Points under which a far-off drawing counts as lost. */
+/** Points under which a far-off drawing or pin counts as lost. */
 const LOST_MAX_POINTS = 30;
+const BULLSEYE_MIN_POINTS = 90;
 
 export function formatKm(km: number): string {
   if (km >= 10) return `${Math.round(km).toLocaleString("en")} km`;
@@ -36,9 +39,71 @@ export function awards(g: Game): Award[] {
   return earned.get(g)!;
 }
 
+type Scored = Placement & { score: NonNullable<Placement["score"]> };
+
 function findAwards(g: Game): Award[] {
-  const drawn = g.placements.filter((p): p is Placement & { score: NonNullable<Placement["score"]> } => !!p.score);
-  if (drawn.length === 0) return [];
+  const scored = g.placements.filter((p): p is Scored => !!p.score);
+  if (scored.length === 0) return [];
+  return g.mode === "cities" ? cityAwards(g, scored) : borderAwards(g, scored);
+}
+
+/** The placement that missed by the most, if it did badly enough to be lost. */
+function lost(g: Game, scored: Scored[], name: (id: string) => string): Award[] {
+  const farthest = [...scored].sort((a, b) => (b.score.distanceKm ?? 0) - (a.score.distanceKm ?? 0))[0];
+  if (farthest.score.points >= LOST_MAX_POINTS) return [];
+  return [
+    {
+      emoji: "🧭",
+      title: "Lost",
+      regionId: farthest.regionId,
+      says: (whose) => `${whose} ${name(farthest.regionId)} is ${formatKm(farthest.score.distanceKm ?? 0)} from home`,
+    },
+  ];
+}
+
+function cityAwards(g: Game, pinned: Scored[]): Award[] {
+  const city = (id: string) => g.target(id);
+  const worstFirst = [...pinned].sort((a, b) => a.score.points - b.score.points);
+  const out: Award[] = [];
+
+  const wet = (p: Scored) =>
+    contains(g.map.water ?? [], p.pin!) || !(contains(g.map.land, p.pin!) || contains(g.map.context, p.pin!));
+  const sunk = worstFirst.find(wet);
+  if (sunk) {
+    out.push({ emoji: "🌊", title: "Atlantis", regionId: sunk.regionId, says: (whose) => `${whose} ${city(sunk.regionId)} is underwater` });
+  }
+
+  for (const p of worstFirst) {
+    const host = g.map.regions.find((r) => r.id !== p.regionId && contains(r.geometry, p.pin!));
+    if (!host) continue;
+    out.push({
+      emoji: "🛂",
+      title: "Border control",
+      regionId: p.regionId,
+      says: (whose) => `${whose} ${city(p.regionId)} is in ${host.name}`,
+    });
+    break;
+  }
+
+  out.push(...lost(g, pinned, city));
+
+  const best = worstFirst.at(-1)!;
+  if (best.score.points >= BULLSEYE_MIN_POINTS) {
+    out.push({
+      emoji: "🎯",
+      title: "Bullseye",
+      regionId: best.regionId,
+      says: (whose) =>
+        (best.score.distanceKm ?? 0) < 1
+          ? `${whose} ${city(best.regionId)} is spot on`
+          : `${whose} ${city(best.regionId)} landed ${formatKm(best.score.distanceKm ?? 0)} from the real one`,
+      good: true,
+    });
+  }
+  return out;
+}
+
+function borderAwards(g: Game, drawn: Scored[]): Award[] {
   const name = (id: string) => g.map.regions.find((r) => r.id === id)!.name;
   const ratio = (p: Placement) => area(p.shape) / area(g.region(p.regionId).geometry);
   const out: Award[] = [];
@@ -84,23 +149,17 @@ function findAwards(g: Game): Award[] {
     });
   }
 
-  const farthest = [...drawn].sort((a, b) => (b.score.distanceKm ?? 0) - (a.score.distanceKm ?? 0))[0];
-  if (farthest.score.points < LOST_MAX_POINTS) {
-    out.push({
-      emoji: "🧭",
-      title: "Lost",
-      regionId: farthest.regionId,
-      says: (whose) => `${whose} ${name(farthest.regionId)} is ${formatKm(farthest.score.distanceKm ?? 0)} from home`,
-    });
-  }
+  out.push(...lost(g, drawn, name));
 
-  const sharpest = [...drawn].sort((a, b) => b.score.overlap - a.score.overlap)[0];
-  if (sharpest.score.overlap >= SNIPER_MIN) {
+  const overlap = (p: Scored) => p.score.overlap ?? 0;
+  const sharpest = [...drawn].sort((a, b) => overlap(b) - overlap(a))[0];
+  if (overlap(sharpest) >= SNIPER_MIN) {
     out.push({
       emoji: "🎯",
       title: "Sniper",
       regionId: sharpest.regionId,
-      says: (whose) => `${whose} ${name(sharpest.regionId)} overlaps the real one by ${percent(sharpest.score.overlap)}`,
+      says: (whose) => `${whose} ${name(sharpest.regionId)} overlaps the real one by ${percent(overlap(sharpest))}`,
+      good: true,
     });
   }
   return out;

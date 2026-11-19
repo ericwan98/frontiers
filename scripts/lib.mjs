@@ -1,6 +1,6 @@
 // Shared helpers for the scripts/build-*.mjs map builders.
 import { writeFileSync } from "node:fs";
-import { geoArea, geoPath } from "d3-geo";
+import { geoArea, geoContains, geoDistance, geoPath } from "d3-geo";
 import { geoProject } from "d3-geo-projection";
 import polygonClipping from "polygon-clipping";
 
@@ -138,5 +138,74 @@ export function countryIndex(topology) {
         if (!g) throw new Error(`unknown Natural Earth name: ${n}`);
         return g;
       }),
+  };
+}
+
+const PLACES_URL =
+  "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_50m_populated_places_simple.geojson";
+
+// Display names Natural Earth's populated places spell differently.
+const PLACE_COUNTRIES = {
+  Bahamas: "The Bahamas",
+  "Côte d'Ivoire": "Ivory Coast",
+  "DR Congo": "Congo (Kinshasa)",
+  Eswatini: "eSwatini",
+  Gambia: "The Gambia",
+  "Guinea-Bissau": "Guinea Bissau",
+  "Republic of the Congo": "Congo (Brazzaville)",
+  "Timor-Leste": "East Timor",
+  "United States": "United States of America",
+};
+
+// Where Natural Earth has several capitals for a country, or an out-of-date one: a place's name, or
+// [name, lon, lat] for a place it doesn't have.
+const CAPITALS = {
+  Benin: "Porto-Novo",
+  Bolivia: "Sucre",
+  Burundi: ["Gitega", 29.925, -3.427],
+  "Côte d'Ivoire": "Yamoussoukro",
+  Greenland: "Nuuk",
+  Kazakhstan: ["Astana", 71.43, 51.13],
+  Netherlands: "Amsterdam",
+  "South Africa": "Pretoria",
+  "South Sudan": "Juba",
+  Tanzania: "Dodoma",
+};
+
+// Natural Earth's spellings, in English.
+const CITY_NAMES = { Bogota: "Bogotá", København: "Copenhagen", "Washington,  D.C.": "Washington, D.C." };
+
+/**
+ * Kilometres a capital may sit outside its country as drawn: a port on a smoothed-away coast, or
+ * Malabo on Bioko, an island too small for the world map.
+ */
+const CAPITAL_SLACK_KM = 200;
+
+function vertices(geometry) {
+  return polygons(geometry).flat(2);
+}
+
+/**
+ * Returns a lookup of a country's capital by display name, checked against its lon/lat geometry and
+ * projected with `projection`: Natural Earth's capital, unless CAPITALS says otherwise.
+ */
+export async function capitalFinder(projection) {
+  const places = (await fetchJson(PLACES_URL)).features.map((f) => f.properties);
+  return (name, lonlat) => {
+    const country = PLACE_COUNTRIES[name] ?? name;
+    const pick = CAPITALS[name];
+    const found = Array.isArray(pick)
+      ? [{ name: pick[0], longitude: pick[1], latitude: pick[2] }]
+      : places.filter((p) =>
+          p.adm0name === country && (pick ? p.name === pick : p.featurecla === "Admin-0 capital" && p.adm0cap === 1),
+        );
+    if (found.length !== 1) {
+      throw new Error(`${name}: expected one capital, found ${found.map((p) => p.name).join(", ") || "none"}`);
+    }
+    const at = [found[0].longitude, found[0].latitude];
+    const km = geoContains(lonlat, at) ? 0 : Math.min(...vertices(lonlat).map((v) => geoDistance(v, at))) * 6371;
+    if (km > CAPITAL_SLACK_KM) throw new Error(`${name}: ${found[0].name} is ${Math.round(km)} km outside it`);
+    const [x, y] = projection(at);
+    return { name: CITY_NAMES[found[0].name] ?? found[0].name, at: [round(x), round(y)] };
   };
 }

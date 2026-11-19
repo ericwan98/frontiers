@@ -8,6 +8,8 @@ export interface MapEntry {
   /** What a region is called: singular, plural. */
   noun: [string, string];
   question: string;
+  /** Set on maps whose every region has a capital: they can also be played in cities mode. */
+  cities?: { question: string };
   load: () => Promise<GameMap>;
 }
 
@@ -22,6 +24,7 @@ export const MAPS: MapEntry[] = [
     count: 165,
     noun: ["country", "countries"],
     question: "How well do you know the world map?",
+    cities: { question: "Can you find the world's capitals?" },
     load: () => import("./world.json").then(asMap),
   },
   {
@@ -30,6 +33,7 @@ export const MAPS: MapEntry[] = [
     count: 41,
     noun: ["country", "countries"],
     question: "How well do you know the borders of Europe?",
+    cities: { question: "Can you find the capitals of Europe?" },
     load: () => import("./europe.json").then(asMap),
   },
   {
@@ -38,6 +42,7 @@ export const MAPS: MapEntry[] = [
     count: 49,
     noun: ["country", "countries"],
     question: "How well do you know the borders of Africa?",
+    cities: { question: "Can you find the capitals of Africa?" },
     load: () => import("./africa.json").then(asMap),
   },
   {
@@ -46,6 +51,7 @@ export const MAPS: MapEntry[] = [
     count: 12,
     noun: ["country", "countries"],
     question: "How well do you know the borders of South America?",
+    cities: { question: "Can you find the capitals of South America?" },
     load: () => import("./south-america.json").then(asMap),
   },
   {

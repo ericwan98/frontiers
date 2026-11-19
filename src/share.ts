@@ -49,9 +49,9 @@ export function shareText(g: Game, noun: string): string {
   const rows = [];
   for (let i = 0; i < squares.length; i += SQUARES_PER_ROW) rows.push(squares.slice(i, i + SQUARES_PER_ROW).join(""));
   // A good shot is less fun to read about than a blunder.
-  const blunder = g.phase === "over" ? awards(g).find((a) => a.title !== "Sniper") : undefined;
+  const blunder = g.phase === "over" ? awards(g).find((a) => !a.good) : undefined;
   return [
-    `Frontiers · ${g.map.name}, ${g.order.length} ${noun}${g.easy ? " (easy)" : ""}`,
+    `Frontiers · ${g.title}, ${g.order.length} ${noun}${g.easy ? " (easy)" : ""}`,
     `${g.total} / ${g.order.length * MAX_POINTS}`,
     ...rows,
     ...(blunder ? [`${blunder.emoji} ${blunder.says("My")}`] : []),

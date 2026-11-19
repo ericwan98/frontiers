@@ -1,5 +1,13 @@
-import { difference, intersection, loop, union, type MultiPolygon, type Ring } from "./geometry.ts";
-import { score, type Score } from "./scoring.ts";
+import { difference, intersection, loop, union, type MultiPolygon, type Pair, type Ring } from "./geometry.ts";
+import { pinScore, score, type Score } from "./scoring.ts";
+
+/** Draw each region's borders, or drop a pin on its capital. */
+export type Mode = "borders" | "cities";
+
+export interface City {
+  name: string;
+  at: Pair;
+}
 
 export interface Region {
   id: string;
@@ -7,6 +15,8 @@ export interface Region {
   /** Map label when the name is too long, e.g. "11e". */
   short?: string;
   geometry: MultiPolygon;
+  /** Countries have one; maps where every region has one can be played in cities mode. */
+  capital?: City;
 }
 
 /** A map to play, in projected units (see scripts/build-*.mjs). */
@@ -32,7 +42,10 @@ export interface Stroke {
 
 export interface Placement {
   regionId: string;
+  /** Empty in cities mode. */
   shape: MultiPolygon;
+  /** Where the pin went, in cities mode; absent when skipped. */
+  pin?: Pair;
   /** null when the region was skipped. */
   score: Score | null;
 }
@@ -46,6 +59,8 @@ export interface SavedGame {
   mapId: string;
   /** Missing on games saved before seeds existed. */
   seed?: string;
+  /** Missing on games saved before cities mode. */
+  mode?: Mode;
   easy?: boolean;
   /** Scores of the friend whose link started this game. */
   rival?: Scores;
@@ -57,6 +72,7 @@ export class Game {
   readonly map: GameMap;
   /** Shareable name of this game's order and mode, see seed.ts. */
   readonly seed: string | null;
+  readonly mode: Mode;
   /** Easy mode shows each region's real border right after it is drawn. */
   readonly easy: boolean;
   /** Scores of the friend whose link started this game, to compare with. */
@@ -68,6 +84,8 @@ export class Game {
   taken: MultiPolygon = [];
   strokes: Stroke[] = [];
   draft: MultiPolygon = [];
+  /** The pin about to be submitted, in cities mode. */
+  pin: Pair | null = null;
 
   constructor(
     map: GameMap,
@@ -75,18 +93,21 @@ export class Game {
     {
       placements = [],
       seed = null,
+      mode = "borders",
       easy = false,
       rival = null,
-    }: { placements?: Placement[]; seed?: string | null; easy?: boolean; rival?: Scores | null } = {},
+    }: { placements?: Placement[]; seed?: string | null; mode?: Mode; easy?: boolean; rival?: Scores | null } = {},
   ) {
     const byId = new Map(map.regions.map((r) => [r.id, r]));
     this.map = map;
     this.seed = seed;
+    this.mode = mode;
     this.easy = easy;
     this.rival = rival?.length === order.length ? rival : null;
     this.order = order.map((id) => {
       const region = byId.get(id);
       if (!region) throw new Error(`unknown region ${id}`);
+      if (mode === "cities" && !region.capital) throw new Error(`${id} has no capital`);
       return region;
     });
     for (const p of placements) this.place(p);
@@ -109,8 +130,26 @@ export class Game {
     return this.placements.map((p) => p.score?.points ?? null);
   }
 
+  /** "Europe", or "Europe capitals" in cities mode. */
+  get title(): string {
+    return this.mode === "cities" ? `${this.map.name} capitals` : this.map.name;
+  }
+
   region(id: string): Region {
     return this.order.find((r) => r.id === id)!;
+  }
+
+  /** What the player is asked to place: the region, or its capital in cities mode. */
+  target(id: string): string {
+    const region = this.region(id);
+    return this.mode === "cities" ? region.capital!.name : region.name;
+  }
+
+  /** Puts the pin down, or moves it; false outside cities mode or between turns. */
+  drop(at: Pair): boolean {
+    if (this.phase !== "drawing" || this.mode !== "cities") return false;
+    this.pin = at;
+    return true;
   }
 
   /** Adds a stroke to the draft; false when it claimed nothing new (sea, or land already taken). */
@@ -129,6 +168,7 @@ export class Game {
   }
 
   undo(): void {
+    this.pin = null;
     this.strokes.pop();
     this.draft = this.strokes.reduce((draft, s) => {
       const shape = loop(s.ring);
@@ -139,11 +179,17 @@ export class Game {
   clear(): void {
     this.strokes = [];
     this.draft = [];
+    this.pin = null;
   }
 
   submit(): Placement | undefined {
     const region = this.current;
-    if (this.phase !== "drawing" || !region || this.draft.length === 0) return undefined;
+    if (this.phase !== "drawing" || !region) return undefined;
+    if (this.mode === "cities") {
+      if (!this.pin) return undefined;
+      return this.commit({ regionId: region.id, shape: [], pin: this.pin, score: pinScore(this.pin, region.capital!.at, this.map) });
+    }
+    if (this.draft.length === 0) return undefined;
     return this.commit({
       regionId: region.id,
       shape: this.draft,
@@ -165,6 +211,7 @@ export class Game {
     return {
       mapId: this.map.id,
       ...(this.seed ? { seed: this.seed } : {}),
+      mode: this.mode,
       easy: this.easy,
       ...(this.rival ? { rival: this.rival } : {}),
       order: this.order.map((r) => r.id),
