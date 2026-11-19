@@ -58,6 +58,14 @@ function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
   return node;
 }
 
+/** A street the player found, drawn in colour. */
+export interface FoundStreet {
+  id: string;
+  /** Shown on hover. */
+  name: string;
+  d: string;
+}
+
 export function colorFor(index: number): string {
   return `hsl(${Math.round((index * 137.508) % 360)} 62% 56%)`;
 }
@@ -73,6 +81,11 @@ export class MapView {
   private readonly truthPinLayer: SVGGElement;
   private readonly pinLayer: SVGGElement;
   private readonly live: SVGPolylineElement;
+  private readonly streetLayer: SVGGElement;
+  private readonly streetBase: SVGPathElement;
+  private readonly streetFound: SVGGElement;
+  private readonly streetLatest: SVGPathElement;
+  private readonly streetPaths = new Map<string, SVGPathElement>();
   private stroke: { points: Ring; erase: boolean; pointerId: number } | null = null;
   /** `tap` holds where a press began while it may still drop a pin. */
   private pan: { x: number; y: number; pointerId: number; tap: Pair | null } | null = null;
@@ -98,6 +111,11 @@ export class MapView {
       el("path", { class: "water", d: toPath(map.water ?? []) }),
       el("rect", { class: "frame", width: map.width, height: map.height }),
     );
+    this.streetBase = el("path", { class: "street-base" });
+    this.streetFound = el("g", { class: "street-found" });
+    this.streetLatest = el("path", { class: "street-latest" });
+    this.streetLayer = el("g", { class: "streets" });
+    this.streetLayer.append(this.streetBase, this.streetFound, this.streetLatest);
     this.placedLayer = el("g");
     this.draftPath = el("path", { class: "draft" });
     this.truthLayer = el("g", { class: "truth" });
@@ -105,7 +123,7 @@ export class MapView {
     this.truthPinLayer = el("g", { class: "truth-pins" });
     this.pinLayer = el("g", { class: "pins" });
     this.live = el("polyline", { class: "live" });
-    this.svg.append(this.placedLayer, this.draftPath, this.truthLayer, this.labelLayer, this.truthPinLayer, this.pinLayer, this.live);
+    this.svg.append(this.streetLayer, this.placedLayer, this.draftPath, this.truthLayer, this.labelLayer, this.truthPinLayer, this.pinLayer, this.live);
     container.append(this.svg);
     this.applyView();
     this.listen();
@@ -169,6 +187,34 @@ export class MapView {
   /** Real borders, drawn dashed on top of the drawings. */
   setTruth(shapes: MultiPolygon[]): void {
     this.truthLayer.replaceChildren(...shapes.map((s) => el("path", { d: toPath(s) })));
+  }
+
+  /** Every street in grey, or none: `all` is one SVG path. */
+  setStreetBase(all: string | null): void {
+    this.svg.classList.toggle("streets-mode", all !== null);
+    this.streetBase.setAttribute("d", all ?? "");
+    if (all === null) this.setFoundStreets([], null);
+  }
+
+  /** Found streets in colour, `latest` on top. Paths are kept between calls: there can be thousands. */
+  setFoundStreets(found: FoundStreet[], latest: FoundStreet | null): void {
+    const keep = new Set(found.map((f) => f.id));
+    for (const [id, path] of this.streetPaths) {
+      if (!keep.has(id)) {
+        path.remove();
+        this.streetPaths.delete(id);
+      }
+    }
+    for (const f of found) {
+      if (this.streetPaths.has(f.id)) continue;
+      const path = el("path", { d: f.d });
+      const tip = el("title");
+      tip.textContent = f.name;
+      path.append(tip);
+      this.streetFound.append(path);
+      this.streetPaths.set(f.id, path);
+    }
+    this.streetLatest.setAttribute("d", latest?.d ?? "");
   }
 
   zoomBy(factor: number, at?: Pair): void {

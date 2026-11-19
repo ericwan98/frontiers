@@ -727,3 +727,185 @@ button {
   border-color: var(--ink);
   color: white;
 }
+
+/* Streets mode: the street footprints, then the panel where names are typed. */
+.streets path {
+  stroke: none;
+}
+
+.street-base {
+  fill: #cfc6b2;
+}
+
+.street-found path {
+  fill: var(--accent);
+  stroke: var(--accent) !important;
+  stroke-width: 0.6px;
+  stroke-dasharray: none;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The latest find stands out even when the whole city is on screen. */
+.streets .street-latest {
+  fill: #1c7ed6;
+  stroke: #1c7ed6;
+  stroke-width: 3px;
+  stroke-dasharray: none;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.map.streets-mode {
+  cursor: grab;
+}
+
+.map.streets-mode .placed {
+  display: none;
+}
+
+.map.streets-mode .truth path {
+  stroke: #8a8170;
+  stroke-width: 0.8;
+  stroke-dasharray: 3 3;
+}
+
+.map.streets-mode .labels text {
+  fill-opacity: 0.35;
+}
+
+.playing-streets .tools,
+.playing-streets .hint,
+.playing-streets .result,
+.playing-streets .results-button {
+  display: none;
+}
+
+.streets-panel {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  width: min(24rem, calc(100% - 5rem));
+  max-height: calc(100% - 2rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.8rem 1rem;
+  background: rgb(255 253 248 / 0.95);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.street-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.street-top .link {
+  padding-left: 0;
+}
+
+.street-form {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.street-form input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 1.05rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #c9c4b8;
+  border-radius: 8px;
+  background: white;
+}
+
+.street-message {
+  margin: 0;
+  min-height: 1.3em;
+  overflow-wrap: anywhere;
+}
+
+.street-message .street-name {
+  padding: 0;
+  font-weight: 700;
+  white-space: normal;
+  text-align: left;
+  color: var(--accent);
+}
+
+.street-origin {
+  display: block;
+  font-size: 0.85rem;
+}
+
+.street-stats {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.street-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: #e3ddd0;
+  overflow: hidden;
+}
+
+.street-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  min-width: 2px;
+}
+
+.streets-panel details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.street-recent {
+  margin: 0.3rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.street-recent .link {
+  padding: 0.1rem 0;
+  border: 0;
+  font-weight: 500;
+  white-space: normal;
+  text-align: left;
+}
+
+.street-arrondissements {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.street-arrondissements span {
+  padding: 0.15rem 0.3rem;
+  border-radius: 4px;
+  background: linear-gradient(to right, rgb(250 80 15 / 0.3) var(--share), #efe9dc var(--share));
+}
+
+@media (max-width: 700px) {
+  .streets-panel {
+    left: 0.5rem;
+    top: 0.5rem;
+    width: calc(100% - 3.6rem);
+    max-height: 55%;
+    padding: 0.6rem 0.7rem;
+    gap: 0.35rem;
+  }
+
+  .street-form input {
+    font-size: 16px; /* smaller text makes iOS zoom in on focus */
+  }
+}

@@ -7,7 +7,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "check": "tsc && vitest run && vite build",
-    "maps": "for m in world europe africa south-america us france paris; do node scripts/build-$m.mjs || exit 1; done"
+    "maps": "for m in world europe africa south-america us france paris paris-streets; do node scripts/build-$m.mjs || exit 1; done"
   },
   "devDependencies": {
     "@types/d3-geo": "^3.1.1",

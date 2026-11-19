@@ -1,4 +1,5 @@
 import type { GameMap } from "../game.ts";
+import type { StreetsData } from "../streets.ts";
 
 export interface MapEntry {
   id: string;
@@ -10,13 +11,15 @@ export interface MapEntry {
   question: string;
   /** Set on maps whose every region has a capital: they can also be played in cities mode. */
   cities?: { question: string };
+  /** Set on maps that also have a name-the-streets mode. */
+  streets?: { question: string; load: () => Promise<StreetsData> };
   load: () => Promise<GameMap>;
 }
 
 // JSON imports type their coordinates as number[][], looser than MultiPolygon.
 const asMap = (module: { default: unknown }) => module.default as GameMap;
 
-// Maps load on demand: together they weigh about 1.3 MB.
+// Maps load on demand: together they weigh about 1.3 MB, and the Paris streets 1.8 MB more.
 export const MAPS: MapEntry[] = [
   {
     id: "world",
@@ -76,6 +79,10 @@ export const MAPS: MapEntry[] = [
     count: 20,
     noun: ["arrondissement", "arrondissements"],
     question: "How well do you know the arrondissements of Paris?",
+    streets: {
+      question: "How many streets of Paris can you name?",
+      load: () => import("./paris-streets.json").then((m) => m.default as StreetsData),
+    },
     load: () => import("./paris.json").then(asMap),
   },
 ];

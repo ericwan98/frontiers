@@ -9,6 +9,10 @@ map ends up badly stacked. The real borders show up only at the end.
 The world, Europe, Africa and South America also have a capitals mode: you get a capital and drop a
 pin where you think it is, on the same map without borders.
 
+Paris also has a streets mode: type street names and watch them light up on the map, with no end
+and no timer. Counters show the names found out of about 5,400 and the share of the street area
+they cover, overall and per arrondissement. Progress stays in the browser.
+
 ## Run
 
 ```bash
@@ -36,12 +40,22 @@ npm run check      # typecheck + tests + build
     Ouverte), neighbours from Natural Earth.
   - `paris`: 20 arrondissements, plus the Seine and canals as landmarks, from opendata.paris.fr
     (ODbL).
+  - `paris-streets`: the footprint of every named voie (about 6,200: rues, places, quais, villas…)
+    from the official street register of the Ville de Paris
+    (`denominations-emprises-voies-actuelles` on opendata.paris.fr, ODbL), on the same projection
+    as `paris` (`scripts/paris.mjs`). Voies with a code instead of a name ("voie A/1") are drawn
+    but never asked for. It weighs 1.8 MB and loads only when the mode starts.
 - Countries carry their capital (`capital: { name, at }`), from Natural Earth's populated places
   (v5.1.2) with a few fixes in `scripts/lib.mjs`: one capital per country (Pretoria, Sucre,
   Amsterdam…), Astana and Gitega where the data is out of date. The build fails if a capital is
   more than 200 km outside its country as drawn.
 - `src/maps/index.ts` lists the maps for the picker; each one loads on demand. Maps with `cities`
-  set can be played in capitals mode.
+  set can be played in capitals mode, and maps with `streets` in streets mode.
+- `src/streets.ts`: streets mode answers. One answer finds every voie that shares the distinctive
+  name ("Bercy": the rue, the boulevard, the quai…). Case, accents, punctuation, the type ("rue")
+  and the article ("de la") don't matter, "st" is "saint", and one wrong, missing, extra or
+  swapped letter is forgiven from 5 letters on, if only one name is that close.
+  `src/streets-screen.ts` is the screen; found names are saved in `localStorage`.
 - `src/seed.ts`: every game has a seed like `europe-10-K3F9X` (map, rounds, code), or
   `europe-cities-10-K3F9X` for capitals. Pasting it on
   the picker plays the same regions in the same order, so friends can compare their maps.

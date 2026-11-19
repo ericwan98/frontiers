@@ -2,12 +2,15 @@ import "./style.css";
 import { Game, type GameMap, type Mode, type Placement, type SavedGame, type Scores } from "./game.ts";
 import { awards, formatKm } from "./awards.ts";
 import { confetti } from "./confetti.ts";
+import { $, button, h } from "./dom.ts";
 import { renderPng } from "./image.ts";
 import { MAPS, type MapEntry } from "./maps/index.ts";
 import { pointsBox } from "./geometry.ts";
 import { BULLSEYE_SHARE, MAX_POINTS, square, verdict } from "./scoring.ts";
 import { dailySeed, dayCode, formatSeed, newSeed, parseSeed, seededOrder, streak, type Seed, type Setup } from "./seed.ts";
 import { fanfare, isMuted, scoreSound, setMuted } from "./sound.ts";
+import { Streets } from "./streets.ts";
+import { forgetFound, loadFound, StreetsScreen } from "./streets-screen.ts";
 import { challengeUrl, readChallenge, readPasted, shareText, sum, type Challenge } from "./share.ts";
 import { colorFor, MapView, type Pin, type TruthPin } from "./view.ts";
 
@@ -16,7 +19,9 @@ const QUICK_COUNT = 10;
 const QUICK_FROM = 15;
 const LAST_MAP_KEY = "frontiers:map";
 const EASY_KEY = "frontiers:easy";
-const MODE_KEY = "frontiers:mode";
+/** The mode last picked on each map; before there was one per map, one for all of them. */
+const modeKey = (mapId: string) => `frontiers:${mapId}:mode`;
+const OLD_MODE_KEY = "frontiers:mode";
 /** Total of the last finished game on each seed. */
 const PLAYED_KEY = "frontiers:played";
 const MAX_PLAYED = 200;
@@ -27,21 +32,21 @@ const saveKey = (mapId: string, mode: Mode) => `frontiers:${slot(mapId, mode)}:g
 const bestKey = (mapId: string, mode: Mode) => `frontiers:${slot(mapId, mode)}:best`;
 const CAPITALS: [string, string] = ["capital", "capitals"];
 
-const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-
-function h(tag: string, attrs: Record<string, string> = {}, ...children: (Node | string)[]): HTMLElement {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
-  node.append(...children);
-  return node;
-}
 
 const an = (word: string) => (/^[aeiou]/i.test(word) ? `an ${word}` : `a ${word}`);
 
 
 let entry: MapEntry = MAPS.find((m) => m.id === localStorage.getItem(LAST_MAP_KEY)) ?? MAPS[0];
-/** The mode picked on the start screen; maps without capitals only have borders. */
-const modeOf = (m: MapEntry): Mode => (m.cities && localStorage.getItem(MODE_KEY) === "cities" ? "cities" : "borders");
+/** What a map is played as: borders, capitals, or naming its streets, which isn't a Game. */
+type Choice = Mode | "streets";
+/** The mode picked on the start screen, if the map has it. */
+function choiceOf(m: MapEntry): Choice {
+  const stored = localStorage.getItem(modeKey(m.id)) ?? localStorage.getItem(OLD_MODE_KEY);
+  if (stored === "cities" && m.cities) return "cities";
+  if (stored === "streets" && m.streets) return "streets";
+  return "borders";
+}
+const modeOf = (m: MapEntry): Mode => (choiceOf(m) === "cities" ? "cities" : "borders");
 /** What the player places: the map's regions, or their capitals. */
 const nouns = (mode: Mode) => (mode === "cities" ? CAPITALS : entry.noun);
 let map: GameMap | null = null;
@@ -52,6 +57,9 @@ let endCardOpen = true;
 /** Stepping through a finished game, `at` being the placement on show. */
 let replay: { at: number; playing: boolean } | null = null;
 let replayTimer = 0;
+/** Street data, parsed once per map. */
+const streetsCache = new Map<string, Streets>();
+let streetsScreen: StreetsScreen | null = null;
 
 /** Puts `next` on screen; resolves false if another map was picked while it loaded. */
 async function useMap(next: MapEntry): Promise<boolean> {
@@ -60,6 +68,7 @@ async function useMap(next: MapEntry): Promise<boolean> {
   if (map?.id === next.id) return true;
   const loaded = await next.load();
   if (entry !== next) return false;
+  closeStreets();
   map = loaded;
   view?.destroy();
   view = new MapView($("stage"), map);
@@ -467,12 +476,6 @@ function duel(g: Game, rival: Scores): HTMLElement {
   );
 }
 
-function button(label: string, onClick: () => void, cls = ""): HTMLButtonElement {
-  const b = h("button", { class: cls, type: "button" }, label) as HTMLButtonElement;
-  b.addEventListener("click", onClick);
-  return b;
-}
-
 /** Marks a button as the Enter key's, on screens that have one. */
 function withKey(b: HTMLButtonElement): HTMLButtonElement {
   b.append(h("span", { class: "key" }, " ⏎"));
@@ -485,13 +488,16 @@ function bestLine(best: Record<string, number>, count: number, easy: boolean): s
 }
 
 function showPicker(): void {
+  closeStreets();
   game = null;
   stopReplay();
   showTruth = false;
   const cards = MAPS.map((m) => {
     const saved = loadSaved(m.id, modeOf(m));
     const best = loadBest(m.id, modeOf(m))[String(m.count)];
-    const status = saved
+    const status = choiceOf(m) === "streets"
+      ? `Streets: ${loadFound(m.id).length} found`
+      : saved
       ? `In progress: ${saved.placements.length}/${saved.order.length}`
       : best !== undefined
         ? `Best ${best} / ${m.count * MAX_POINTS}`
@@ -499,7 +505,7 @@ function showPicker(): void {
     const card = button("", () => void pick(m), m === entry ? "map-card current" : "map-card");
     card.append(
       h("strong", {}, m.name),
-      h("span", { class: "muted" }, `${m.count} ${m.noun[1]}${m.cities ? ", or their capitals" : ""}`),
+      h("span", { class: "muted" }, `${m.count} ${m.noun[1]}${m.cities ? ", or their capitals" : ""}${m.streets ? ", or its streets" : ""}`),
       h("span", { class: "muted" }, status),
     );
     return card;
@@ -556,10 +562,12 @@ async function pick(m: MapEntry): Promise<void> {
 function showStart(): void {
   if (!map) return;
   const m = map;
+  closeStreets();
   game = null;
   stopReplay();
   showTruth = false;
   view?.resetZoom();
+  if (choiceOf(entry) === "streets") return showStreetsStart(m);
   // A save from an older version of the map (say, with Alaska) can't be resumed.
   const mode = modeOf(entry);
   const ids = new Set(m.regions.map((r) => r.id));
@@ -619,18 +627,80 @@ function showStart(): void {
   render();
 }
 
-/** Borders or capitals, on maps that have both. */
-function modeSwitch(mode: Mode): HTMLElement[] {
-  if (!entry.cities) return [];
-  const choice = (value: Mode, text: string) => {
+/** Borders, capitals or streets, on maps that have more than borders. */
+function modeSwitch(mode: Choice): HTMLElement[] {
+  if (!entry.cities && !entry.streets) return [];
+  const choice = (value: Choice, text: string) => {
     const b = button(text, () => {
-      localStorage.setItem(MODE_KEY, value);
+      localStorage.setItem(modeKey(entry.id), value);
       showStart();
     });
     b.setAttribute("aria-pressed", String(mode === value));
     return b;
   };
-  return [h("div", { class: "modes", role: "group", "aria-label": "Mode" }, choice("borders", "Borders"), choice("cities", "Capitals"))];
+  return [
+    h(
+      "div",
+      { class: "modes", role: "group", "aria-label": "Mode" },
+      choice("borders", "Borders"),
+      ...(entry.cities ? [choice("cities", "Capitals")] : []),
+      ...(entry.streets ? [choice("streets", "Streets")] : []),
+    ),
+  ];
+}
+
+function showStreetsStart(m: GameMap): void {
+  const found = loadFound(m.id).length;
+  const actions = [
+    button(found ? `Continue (${found} found)` : "Start", () => void playStreets(), "primary"),
+    ...(found
+      ? [button("Start over", () => {
+          if (!confirm(`Forget the ${found} names you found?`)) return;
+          forgetFound(m.id);
+          showStart();
+        })]
+      : []),
+    button("← Other maps", showPicker, "link"),
+  ];
+  $("overlay").replaceChildren(
+    h(
+      "div",
+      { class: "card start" },
+      h("h1", {}, `${m.name} streets`),
+      ...modeSwitch("streets"),
+      h("p", { class: "lead" }, entry.streets!.question),
+      h(
+        "ul",
+        {},
+        h("li", {}, "Type the name of a street: every street with that name lights up. “Bercy” finds the rue, the boulevard, the quai, the pont, the port and the allée de Bercy."),
+        h("li", {}, "“Rue de” is optional: “Rivoli” is enough. One wrong letter is forgiven."),
+        h("li", {}, "The counters show the names you found and the share of the street area they cover. There is no end and no timer: your progress stays in this browser, so come back any time."),
+      ),
+      h("div", { class: "actions" }, ...actions),
+    ),
+  );
+  render();
+}
+
+async function playStreets(): Promise<void> {
+  const [m, e] = [map, entry];
+  if (!m || !e.streets) return;
+  $("overlay").setAttribute("aria-busy", "true");
+  let streets = streetsCache.get(m.id);
+  if (!streets) {
+    streets = new Streets(await e.streets.load());
+    streetsCache.set(m.id, streets);
+  }
+  $("overlay").removeAttribute("aria-busy");
+  if (map !== m || !view || streetsScreen) return;
+  view.resetZoom();
+  streetsScreen = new StreetsScreen(streets, m, view, $("stage"), showStart);
+  render();
+}
+
+function closeStreets(): void {
+  streetsScreen?.destroy();
+  streetsScreen = null;
 }
 
 function rules(m: GameMap, mode: Mode): string[] {
@@ -706,6 +776,13 @@ async function showChallenge({ seed, rival }: Challenge): Promise<void> {
 function render(): void {
   const overlay = $("overlay");
   const g = game;
+  $("stage").classList.toggle("playing-streets", streetsScreen !== null);
+  if (streetsScreen) {
+    overlay.hidden = true;
+    $("hud").hidden = true;
+    if (view) view.drawingEnabled = view.pinEnabled = false;
+    return;
+  }
   overlay.hidden = g !== null && !(g.phase === "over" && endCardOpen);
   $("hud").hidden = g === null;
   if (!view) return;
