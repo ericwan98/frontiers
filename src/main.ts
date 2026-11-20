@@ -19,7 +19,7 @@ const QUICK_COUNT = 10;
 const QUICK_FROM = 15;
 const LAST_MAP_KEY = "frontiers:map";
 const LEVEL_KEY = "frontiers:level";
-/** Before levels: "1" picked today's normal level. */
+/** Before levels: "1" picked today's normal level, "0" today's hard. */
 const OLD_EASY_KEY = "frontiers:easy";
 /** The mode last picked on each map; before there was one per map, one for all of them. */
 const modeKey = (mapId: string) => `frontiers:${mapId}:mode`;
@@ -133,7 +133,7 @@ const bestFor = (count: number, level: Level) => `${count}${BEST_SUFFIX[level]}`
 function pickedLevel(): Level {
   const stored = localStorage.getItem(LEVEL_KEY);
   if (LEVELS.includes(stored as Level)) return stored as Level;
-  return localStorage.getItem(OLD_EASY_KEY) === "1" ? "normal" : "hard";
+  return localStorage.getItem(OLD_EASY_KEY) === "0" ? "hard" : "normal";
 }
 
 function persist(g: Game): void {

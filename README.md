@@ -81,7 +81,7 @@ npm run check      # typecheck + tests + build
 - Three levels, each part of the seed and with its own best scores. Easy (`europe-10-K3F9X-guided`)
   puts the real region, or the real capital, in place of your drawing or pin from the next turn
   on, so mistakes don't pile up. Normal (`-normal`) shows the real border dashed, or the real spot
-  circled, while the score is up. Hard (no ending) shows nothing until the end. Normal was called
+  circled, while the score is up, and is the default. Hard (no ending) shows nothing until the end. Normal was called
   easy before there were levels: old `-easy` seeds, saved games and best scores read as normal.
 - `src/game.ts`: the game. A drawing is clipped to the land in play, minus everything already
   placed. Shift-drag or the Eraser button erases. On a phone, two fingers pinch and pan.
