@@ -4,6 +4,14 @@ import { pinScore, score, type Score } from "./scoring.ts";
 /** Draw each region's borders, or drop a pin on its capital. */
 export type Mode = "borders" | "cities";
 
+/**
+ * How much the game helps. Easy puts the real region in place of the drawing from the next turn
+ * on, so mistakes don't pile up; normal shows the real region while the score is up; hard shows
+ * nothing until the end.
+ */
+export type Level = "easy" | "normal" | "hard";
+export const LEVELS: Level[] = ["easy", "normal", "hard"];
+
 export interface City {
   name: string;
   at: Pair;
@@ -61,6 +69,8 @@ export interface SavedGame {
   seed?: string;
   /** Missing on games saved before cities mode. */
   mode?: Mode;
+  level?: Level;
+  /** Games saved before levels: true was today's normal, false or missing today's hard. */
   easy?: boolean;
   /** Scores of the friend whose link started this game. */
   rival?: Scores;
@@ -73,8 +83,7 @@ export class Game {
   /** Shareable name of this game's order and mode, see seed.ts. */
   readonly seed: string | null;
   readonly mode: Mode;
-  /** Easy mode shows each region's real border right after it is drawn. */
-  readonly easy: boolean;
+  readonly level: Level;
   /** Scores of the friend whose link started this game, to compare with. */
   readonly rival: Scores | null;
   readonly order: Region[];
@@ -94,15 +103,15 @@ export class Game {
       placements = [],
       seed = null,
       mode = "borders",
-      easy = false,
+      level = "hard",
       rival = null,
-    }: { placements?: Placement[]; seed?: string | null; mode?: Mode; easy?: boolean; rival?: Scores | null } = {},
+    }: { placements?: Placement[]; seed?: string | null; mode?: Mode; level?: Level; rival?: Scores | null } = {},
   ) {
     const byId = new Map(map.regions.map((r) => [r.id, r]));
     this.map = map;
     this.seed = seed;
     this.mode = mode;
-    this.easy = easy;
+    this.level = level;
     this.rival = rival?.length === order.length ? rival : null;
     this.order = order.map((id) => {
       const region = byId.get(id);
@@ -212,7 +221,7 @@ export class Game {
       mapId: this.map.id,
       ...(this.seed ? { seed: this.seed } : {}),
       mode: this.mode,
-      easy: this.easy,
+      level: this.level,
       ...(this.rival ? { rival: this.rival } : {}),
       order: this.order.map((r) => r.id),
       placements: this.placements,
@@ -228,13 +237,17 @@ export class Game {
 
   private place(placement: Placement): void {
     this.placements.push(placement);
-    if (placement.shape.length) this.taken = union(this.taken, placement.shape);
+    // In easy mode the real region is what the next drawings get clipped against.
+    const claimed = this.level === "easy" && this.mode === "borders" ? this.region(placement.regionId).geometry : placement.shape;
+    if (claimed.length) this.taken = union(this.taken, claimed);
   }
 
   private claimable(shape: MultiPolygon): MultiPolygon {
     return difference(intersection(shape, this.map.land), this.taken);
   }
 }
+
+export const levelOf = (saved: SavedGame): Level => saved.level ?? (saved.easy ? "normal" : "hard");
 
 export function shuffle<T>(items: readonly T[], random: () => number = Math.random): T[] {
   const out = [...items];

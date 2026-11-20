@@ -78,8 +78,11 @@ npm run check      # typecheck + tests + build
   result. Clicking an award or a row replays the game from there; Replay plays it back.
 - `src/confetti.ts`, `src/sound.ts`: confetti for a great drawing or a won game, and small
   synthesised sounds (no audio files), with a mute button.
-- Easy mode shows each region's real border, or each capital's real spot, right after it is
-  placed, which helps with the neighbours. It is part of the seed (`europe-10-K3F9X-easy`) and has its own best scores.
+- Three levels, each part of the seed and with its own best scores. Easy (`europe-10-K3F9X-guided`)
+  puts the real region, or the real capital, in place of your drawing or pin from the next turn
+  on, so mistakes don't pile up. Normal (`-normal`) shows the real border dashed, or the real spot
+  circled, while the score is up. Hard (no ending) shows nothing until the end. Normal was called
+  easy before there were levels: old `-easy` seeds, saved games and best scores read as normal.
 - `src/game.ts`: the game. A drawing is clipped to the land in play, minus everything already
   placed. Shift-drag or the Eraser button erases. On a phone, two fingers pinch and pan.
 - `src/scoring.ts`: up to 100 points per region: 75% intersection over union, 25% for the

@@ -51,7 +51,7 @@ export function shareText(g: Game, noun: string): string {
   // A good shot is less fun to read about than a blunder.
   const blunder = g.phase === "over" ? awards(g).find((a) => !a.good) : undefined;
   return [
-    `Frontiers · ${g.title}, ${g.order.length} ${noun}${g.easy ? " (easy)" : ""}`,
+    `Frontiers · ${g.title}, ${g.order.length} ${noun}${g.level === "hard" ? "" : ` (${g.level})`}`,
     `${g.total} / ${g.order.length * MAX_POINTS}`,
     ...rows,
     ...(blunder ? [`${blunder.emoji} ${blunder.says("My")}`] : []),

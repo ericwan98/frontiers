@@ -1,13 +1,13 @@
 // A seed names a game: the map, borders or cities, how many regions, a code that fixes their
-// order, and easy mode. Two players on the same seed get the same regions in the same order.
-import { shuffle, type Mode } from "./game.ts";
+// order, and the level. Two players on the same seed get the same regions in the same order.
+import { shuffle, type Level, type Mode } from "./game.ts";
 
 export interface Seed {
   mapId: string;
   mode: Mode;
   count: number;
   code: string;
-  easy: boolean;
+  level: Level;
 }
 
 /** A seed without its code: what the player picked. */
@@ -43,16 +43,24 @@ export function streak(playedSeeds: Iterable<string>, today = new Date()): numbe
   return n;
 }
 
-const EASY_SUFFIX = "-easy";
+/** Seed ending of each level. Normal was called easy before there were levels: its old seeds end in -easy. */
+const LEVEL_SUFFIX: Record<Level, string> = { easy: "-guided", normal: "-normal", hard: "" };
+const OLD_NORMAL_SUFFIX = "-easy";
 // After the map id: europe-cities-10-K3F9X. Seeds from before cities have no mode, and are borders.
 const CITIES_SUFFIX = "-cities";
 const orderKey = ({ mapId, mode, count, code }: Seed) =>
   `${mapId}${mode === "cities" ? CITIES_SUFFIX : ""}-${count}-${code}`;
-export const formatSeed = (seed: Seed) => orderKey(seed) + (seed.easy ? EASY_SUFFIX : "");
+export const formatSeed = (seed: Seed) => orderKey(seed) + LEVEL_SUFFIX[seed.level];
+
+/** True when two seeds name the same game: an old europe-10-K3F9X-easy is europe-10-K3F9X-normal. */
+export function sameSeed(a: string, b: string): boolean {
+  const [x, y] = [parseSeed(a), parseSeed(b)];
+  return x && y ? formatSeed(x) === formatSeed(y) : a === b;
+}
 
 /** Reads a pasted seed, forgiving case and stray spaces; null if it isn't one. */
 export function parseSeed(text: string): Seed | null {
-  const match = /^([a-z]+(?:-[a-z]+)*)-(\d{1,3})-([a-z0-9]{1,16})(-easy)?$/i.exec(text.trim());
+  const match = /^([a-z]+(?:-[a-z]+)*)-(\d{1,3})-([a-z0-9]{1,16})(-easy|-normal|-guided)?$/i.exec(text.trim());
   if (!match) return null;
   const name = match[1].toLowerCase();
   const cities = name.endsWith(CITIES_SUFFIX);
@@ -61,12 +69,17 @@ export function parseSeed(text: string): Seed | null {
     mode: cities ? "cities" : "borders",
     count: Number(match[2]),
     code: match[3].toUpperCase(),
-    easy: !!match[4],
+    level: levelOfSuffix(match[4]?.toLowerCase() ?? ""),
   };
 }
 
+function levelOfSuffix(suffix: string): Level {
+  if (suffix === OLD_NORMAL_SUFFIX) return "normal";
+  return (Object.keys(LEVEL_SUFFIX) as Level[]).find((l) => LEVEL_SUFFIX[l] === suffix) ?? "hard";
+}
+
 /**
- * The regions the seed plays, in order, the same with or without easy mode. Sorting first keeps it
+ * The regions the seed plays, in order, the same at every level. Sorting first keeps it
  * independent of the map file's order.
  */
 export function seededOrder(seed: Seed, regionIds: readonly string[]): string[] {

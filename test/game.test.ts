@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { awards } from "../src/awards.ts";
-import { Game, shuffle, type GameMap } from "../src/game.ts";
+import { Game, levelOf, shuffle, type GameMap } from "../src/game.ts";
 import { area, centroid, contains, simplify, type MultiPolygon, type Ring } from "../src/geometry.ts";
 import europe from "../src/maps/europe.json";
 import { MAPS } from "../src/maps/index.ts";
 import { pinScore, score, square as tierSquare } from "../src/scoring.ts";
-import { dailySeed, formatSeed, newSeed, parseSeed, seededOrder, streak } from "../src/seed.ts";
+import { dailySeed, formatSeed, newSeed, parseSeed, sameSeed, seededOrder, streak } from "../src/seed.ts";
 import { readChallenge, readPasted, shareText } from "../src/share.ts";
 
 const square = (x: number, y: number, s: number): MultiPolygon => [
@@ -95,6 +95,28 @@ describe("Game", () => {
     game.skip();
     game.next();
     expect(game.phase).toBe("over");
+  });
+
+  it("in easy mode, clips the next drawings to the real country, not to the drawing", () => {
+    const game = new Game(tiny, ["a", "b"], { level: "easy" });
+    game.addStroke({ ring: loopOf(-5, -5, 40), erase: false });
+    expect(game.submit()!.score!.points).toBeLessThan(100);
+    game.next();
+    // The greedy drawing took B's land, but only the real A is taken.
+    expect(area(game.taken)).toBe(100);
+    expect(game.addStroke({ ring: loopOf(10, 0, 10), erase: false })).toBe(true);
+    expect(game.submit()!.score!.points).toBe(100);
+    const saved = JSON.parse(JSON.stringify(game.save()));
+    expect(saved.placements[0].shape).not.toEqual(tiny.regions[0].geometry);
+    const resumed = new Game(tiny, saved.order, { ...saved, level: levelOf(saved) });
+    expect(area(resumed.taken)).toBe(200);
+  });
+
+  it("in easy mode, counts a skipped country as its real self", () => {
+    const game = new Game(tiny, ["a", "b"], { level: "easy" });
+    game.skip();
+    game.next();
+    expect(game.addStroke({ ring: loopOf(0, 0, 10), erase: false })).toBe(false);
   });
 
   it("subtracts with erase strokes and replays strokes on undo", () => {
@@ -224,36 +246,52 @@ describe("seed", () => {
   const ids = (europe as GameMap).regions.map((r) => r.id);
 
   it("round-trips, forgiving case and spaces", () => {
-    const seed = newSeed({ mapId: "europe", count: 10, easy: false, mode: "borders" });
+    const seed = newSeed({ mapId: "europe", count: 10, level: "hard", mode: "borders" });
     expect(formatSeed(seed)).toMatch(/^europe-10-[2-9A-Z]{5}$/);
     expect(parseSeed(` ${formatSeed(seed).toLowerCase()} `)).toEqual(seed);
-    const easy = newSeed({ mapId: "paris", count: 20, easy: true, mode: "borders" });
-    expect(formatSeed(easy)).toMatch(/^paris-20-[2-9A-Z]{5}-easy$/);
+    const easy = newSeed({ mapId: "paris", count: 20, level: "easy", mode: "borders" });
+    expect(formatSeed(easy)).toMatch(/^paris-20-[2-9A-Z]{5}-guided$/);
     expect(parseSeed(formatSeed(easy))).toEqual(easy);
+    const normal = newSeed({ mapId: "paris", count: 20, level: "normal", mode: "borders" });
+    expect(formatSeed(normal)).toMatch(/^paris-20-[2-9A-Z]{5}-normal$/);
+    expect(parseSeed(formatSeed(normal))).toEqual(normal);
     expect(parseSeed("europe 10 ABCDE")).toBeNull();
-    const cities = newSeed({ mapId: "south-america", count: 12, easy: true, mode: "cities" });
-    expect(formatSeed(cities)).toMatch(/^south-america-cities-12-[2-9A-Z]{5}-easy$/);
+    const cities = newSeed({ mapId: "south-america", count: 12, level: "normal", mode: "cities" });
+    expect(formatSeed(cities)).toMatch(/^south-america-cities-12-[2-9A-Z]{5}-normal$/);
     expect(parseSeed(formatSeed(cities))).toEqual(cities);
   });
 
   it("gives everyone the same order, whatever the order of the map file", () => {
-    const seed = { mapId: "europe", count: 10, code: "K3F9X", easy: false, mode: "borders" as const };
+    const seed = { mapId: "europe", count: 10, code: "K3F9X", level: "hard" as const, mode: "borders" as const };
     const order = seededOrder(seed, ids);
     expect(order).toHaveLength(10);
     expect(new Set(order).size).toBe(10);
     expect(seededOrder(seed, [...ids].reverse())).toEqual(order);
     expect(seededOrder({ ...seed, code: "K3F9Y" }, ids)).not.toEqual(order);
-    expect(seededOrder({ ...seed, easy: true }, ids)).toEqual(order);
+    expect(seededOrder({ ...seed, level: "easy" }, ids)).toEqual(order);
+    expect(seededOrder({ ...seed, level: "normal" }, ids)).toEqual(order);
     // Capitals of the day aren't the countries of the day.
     expect(seededOrder({ ...seed, mode: "cities" }, ids)).not.toEqual(order);
   });
 
   it("is saved with the game, with the mode", () => {
-    const game = new Game(tiny, ["a", "b"], { seed: "tiny-2-ABCDE-easy", easy: true });
+    const game = new Game(tiny, ["a", "b"], { seed: "tiny-2-ABCDE-guided", level: "easy" });
     const saved = JSON.parse(JSON.stringify(game.save()));
-    const resumed = new Game(tiny, saved.order, saved);
-    expect(resumed.seed).toBe("tiny-2-ABCDE-easy");
-    expect(resumed.easy).toBe(true);
+    const resumed = new Game(tiny, saved.order, { ...saved, level: levelOf(saved) });
+    expect(resumed.seed).toBe("tiny-2-ABCDE-guided");
+    expect(resumed.level).toBe("easy");
+  });
+
+  it("reads seeds and games from before levels: easy then is normal now", () => {
+    expect(parseSeed("europe-10-K3F9X-easy")?.level).toBe("normal");
+    expect(parseSeed("europe-10-K3F9X")?.level).toBe("hard");
+    expect(sameSeed("europe-10-K3F9X-easy", "europe-10-K3F9X-normal")).toBe(true);
+    expect(sameSeed("europe-10-K3F9X-easy", "europe-10-K3F9X-guided")).toBe(false);
+    expect(sameSeed("europe-10-K3F9X", "europe-10-K3F9X-normal")).toBe(false);
+    const order = ["a", "b"];
+    expect(levelOf({ mapId: "tiny", easy: true, order, placements: [] })).toBe("normal");
+    expect(levelOf({ mapId: "tiny", easy: false, order, placements: [] })).toBe("hard");
+    expect(levelOf({ mapId: "tiny", order, placements: [] })).toBe("hard");
   });
 });
 
@@ -320,7 +358,7 @@ describe("awards", () => {
 });
 
 describe("sharing", () => {
-  const seed = { mapId: "europe", count: 3, code: "K3F9X", easy: false, mode: "borders" as const };
+  const seed = { mapId: "europe", count: 3, code: "K3F9X", level: "hard" as const, mode: "borders" as const };
 
   it("reads a challenge link with the sender's scores", () => {
     const link = "https://frontiers.example/?seed=europe-3-K3F9X&vs=72.x.100";
@@ -359,10 +397,10 @@ describe("sharing", () => {
   });
 
   it("names today's seed after the date", () => {
-    expect(formatSeed(dailySeed({ mapId: "france", count: 10, easy: false, mode: "borders" }, new Date(2026, 10, 8)))).toBe(
+    expect(formatSeed(dailySeed({ mapId: "france", count: 10, level: "hard", mode: "borders" }, new Date(2026, 10, 8)))).toBe(
       "france-10-20261108",
     );
-    expect(formatSeed(dailySeed({ mapId: "europe", count: 10, easy: false, mode: "cities" }, new Date(2026, 10, 8)))).toBe(
+    expect(formatSeed(dailySeed({ mapId: "europe", count: 10, level: "hard", mode: "cities" }, new Date(2026, 10, 8)))).toBe(
       "europe-cities-10-20261108",
     );
   });
@@ -372,7 +410,7 @@ describe("sharing", () => {
       mapId: "south-america",
       count: 12,
       code: "K3F9X",
-      easy: true,
+      level: "normal",
       mode: "borders",
     });
   });
