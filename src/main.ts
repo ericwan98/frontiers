@@ -606,7 +606,7 @@ function showStart(): void {
       h("h1", {}, mode === "cities" ? `${m.name} capitals` : m.name),
       ...modeSwitch(mode),
       h("p", { class: "lead" }, mode === "cities" ? entry.cities!.question : entry.question),
-      h("ul", {}, ...rules(m, mode).map((rule) => h("li", {}, rule))),
+      h("ul", {}, ...rules(m, mode, level).map((rule) => h("li", {}, rule))),
       ...levelSwitch(level, mode, one),
       h(
         "div",
@@ -787,21 +787,24 @@ function closeStreets(): void {
   streetsScreen = null;
 }
 
-function rules(m: GameMap, mode: Mode): string[] {
+/** How to play; when the real borders show depends on the level, which says it under its switch. */
+function rules(m: GameMap, mode: Mode, level: Level): string[] {
   const [one, many] = nouns(mode);
   if (mode === "cities") {
     const tap = touchScreen() ? "Tap" : "Click";
     return [
       `You get ${an(one)}. ${tap} where you think it is to drop a pin; ${tap.toLowerCase()} again to move it. Drag to pan.`,
       "The map shows coasts but no borders and no cities.",
-      `Score: up to 100 per ${one}. Within ${formatKm(BULLSEYE_SHARE * m.width * m.kmPerUnit)} is a bullseye; points drop off with distance after that. The real spots show up only at the end.`,
+      `Score: up to 100 per ${one}. Within ${formatKm(BULLSEYE_SHARE * m.width * m.kmPerUnit)} is a bullseye; points drop off with distance after that.`,
     ];
   }
   return [
     `You get ${an(one)}. Draw its borders on the map by dragging a loop around it.`,
     "Edges are free: your drawing is cut to the land. Draw more loops to add islands.",
-    `Land you already gave to ${an(one)} is taken. Next ${many} fit around your mistakes.`,
-    `Score: up to 100 per ${one}, for the overlap with the real thing and for being in the right place. The real borders show up only at the end.`,
+    level === "easy"
+      ? `Land of the ${many} already played is taken, as far as their real borders go.`
+      : `Land you already gave to ${an(one)} is taken. Next ${many} fit around your mistakes.`,
+    `Score: up to 100 per ${one}, for the overlap with the real thing and for being in the right place.`,
   ];
 }
 
