@@ -89,6 +89,15 @@ npm run check      # typecheck + tests + build
 - There is no backend: `dist/` is static, and best scores and the game in progress live in
   `localStorage`.
 
+## Saves
+
+Players keep weeks of street finds in their browser: no change may lose or alter them.
+`test/saves.test.ts` pins what saves rely on: the `localStorage` key and format, every name in
+`order` still finding its streets, the order and grouping of the first 5,401 names, and progress
+links made on 2026-11-19. A new find only appends to the save, so a name the data no longer knows
+stays saved. If one of these tests fails, fix the change, not the test. A street the register
+renames needs an alias to its new name, not a removal.
+
 ## Deploy
 
 Every push to `main` is tested, built and published to GitHub Pages by

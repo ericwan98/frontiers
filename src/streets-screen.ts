@@ -156,7 +156,8 @@ export class StreetsScreen {
     const before = this.streets.progress(this.found);
     this.found.push(...fresh);
     this.latest = fresh[0];
-    localStorage.setItem(foundKey(this.map.id), JSON.stringify(this.found.map((g) => g.name)));
+    // Append, never rewrite: a saved name the data no longer knows must survive until it comes back.
+    addFound(this.map.id, fresh.map((g) => g.name));
     this.update();
     const share = fresh.reduce((s, g) => s + g.m2, 0) / this.streets.totalM2;
     const metres = fresh.reduce((s, g) => s + g.metres, 0);
