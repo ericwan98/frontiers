@@ -815,11 +815,14 @@ button {
   padding-right: 0;
 }
 
-.street-share {
+.street-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 1rem;
   margin: 0;
 }
 
-.street-share .link {
+.street-actions .link {
   padding-left: 0;
 }
 
@@ -940,7 +943,7 @@ button {
     display: inline;
   }
 
-  .streets-panel:not(.unfolded) :is(details, .street-long, .street-share) {
+  .streets-panel:not(.unfolded) :is(details, .street-long, .street-actions) {
     display: none;
   }
 }

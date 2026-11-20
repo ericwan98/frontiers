@@ -138,3 +138,22 @@ describe("progress links", () => {
     expect(fresh).toEqual(["Bercy", "Saint-Honoré"]);
   });
 });
+
+describe("faubourgs and portes", () => {
+  it("are found with the name they are named after", () => {
+    expect(found("saint-martin")).toEqual(["Faubourg Saint-Martin", "Saint-Martin"]);
+    expect(found("rue saint martn")).toEqual(["Faubourg Saint-Martin", "Saint-Martin"]);
+    expect(found("Montmartre")).toEqual(["Faubourg Montmartre", "Montmartre", "Porte de Montmartre"]);
+    expect(found("orléans")).toContain("Porte d'Orléans");
+  });
+
+  it("are found alone by their full name", () => {
+    expect(found("rue du faubourg saint-martin")).toEqual(["Faubourg Saint-Martin"]);
+    // "Porte" is also a street type, as at the Halles: dropping it finds Clichy as well.
+    expect(found("porte de clichy")).toEqual(["Clichy", "Porte de Clichy"]);
+  });
+
+  it("are found by the name alone when no other voie has it", () => {
+    expect(found("champerret")).toEqual(["Porte de Champerret"]);
+  });
+});

@@ -56,6 +56,8 @@ export interface Progress {
 }
 
 const ARTICLES = ["de la", "de l", "des", "du", "de", "d", "aux", "au", "a", "en", "la", "le", "les", "l"];
+/** Voies named after another one by place: "Saint-Martin" finds the rue du Faubourg Saint-Martin too. */
+const OUTSKIRTS = ["faubourg", "porte"];
 /** Shorter answers must be spelled exactly: one letter off would match too much. */
 const TYPO_FROM = 5;
 
@@ -100,6 +102,8 @@ export class Streets {
   private readonly byId = new Map<string, StreetGroup>();
   /** Normalized spellings, the distinctive name and the full one, to the groups they find. */
   private readonly keys = new Map<string, StreetGroup[]>();
+  /** Faubourgs and portes of a name, found with it. Saved names don't change: only what an answer finds. */
+  private readonly outskirts = new Map<StreetGroup, StreetGroup[]>();
   private readonly types: string[];
 
   constructor(data: StreetsData) {
@@ -125,6 +129,15 @@ export class Streets {
         this.keys.set(key, found);
       }
     }
+    for (const g of this.groups) {
+      const place = dropPrefix(g.id, OUTSKIRTS);
+      if (place === g.id) continue;
+      const name = dropPrefix(place, ARTICLES);
+      const base = this.byId.get(name);
+      // With no voie of that name ("Champerret"), the name alone finds the porte.
+      if (base) this.outskirts.set(base, [...(this.outskirts.get(base) ?? []), g]);
+      else this.keys.set(name, [...(this.keys.get(name) ?? []), g]);
+    }
     this.totalM2 = this.groups.reduce((s, g) => s + g.m2, 0);
     this.totalMetres = this.groups.reduce((s, g) => s + g.metres, 0);
     this.arrondissementM2 = this.shares(data.voies);
@@ -146,14 +159,18 @@ export class Streets {
     const untyped = dropPrefix(raw, this.types);
     const tries = [...new Set([raw, untyped, dropPrefix(untyped, ARTICLES), dropPrefix(raw, ARTICLES)])].filter(Boolean);
     const exact = new Set(tries.flatMap((t) => this.keys.get(t) ?? []));
-    if (exact.size) return { kind: "found", groups: [...exact], typo: false };
+    if (exact.size) return { kind: "found", groups: this.widen([...exact]), typo: false };
     const close = new Set<StreetGroup>();
     for (const t of tries) {
       if (t.length < TYPO_FROM) continue;
       for (const [key, groups] of this.keys) if (withinOneEdit(t, key)) groups.forEach((g) => close.add(g));
     }
-    if (close.size === 1) return { kind: "found", groups: [...close], typo: true };
+    if (close.size === 1) return { kind: "found", groups: this.widen([...close]), typo: true };
     return close.size ? { kind: "ambiguous", groups: [...close] } : { kind: "unknown" };
+  }
+
+  private widen(groups: StreetGroup[]): StreetGroup[] {
+    return [...new Set(groups.flatMap((g) => [g, ...(this.outskirts.get(g) ?? [])]))];
   }
 
   /** Names of `incoming` whose group isn't found in `saved` yet, once each: what a progress link adds. */

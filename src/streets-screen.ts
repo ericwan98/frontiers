@@ -10,6 +10,9 @@ const RECENT = 8;
 /** Shares of the street area, and numbers of names, that are worth a celebration. */
 const AREA_MILESTONES = [0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
 const NAME_MILESTONES = [100, 250, 500, 1000, 2000, 3000, 4000, 5000];
+/** A timelapse shows finds in the order they were saved: this long per find, within these bounds. */
+const TIMELAPSE_MS = { each: 30, min: 4000, max: 25000 };
+const REPLAY = "Replay your finds";
 
 const foundKey = (mapId: string) => `frontiers:${mapId}-streets:found`;
 
@@ -62,6 +65,8 @@ export class StreetsScreen {
   private readonly found: StreetGroup[];
   private latest: StreetGroup | null = null;
   private readonly more: HTMLButtonElement;
+  private readonly replay: HTMLButtonElement;
+  private timelapseFrame = 0;
 
   constructor(
     private readonly streets: Streets,
@@ -98,6 +103,7 @@ export class StreetsScreen {
     // On a phone the panel starts folded to the input and a short count, to leave the map room.
     this.more = button("More", () => this.unfold(!this.panel.classList.contains("unfolded")), "link street-more");
     this.more.setAttribute("aria-expanded", "false");
+    this.replay = button(REPLAY, () => this.timelapse(), "link");
     this.panel = h(
       "aside",
       { class: "streets-panel" },
@@ -114,7 +120,12 @@ export class StreetsScreen {
       h("div", { class: "street-bar" }, this.bar),
       h("details", {}, h("summary", {}, "Latest finds"), this.recent),
       h("details", {}, h("summary", {}, "By arrondissement"), this.byArrondissement),
-      h("p", { class: "street-share" }, button("Copy a link to merge your finds", () => void this.share(), "link")),
+      h(
+        "p",
+        { class: "street-actions" },
+        this.replay,
+        button("Copy a link to merge your finds", () => void this.share(), "link"),
+      ),
     );
     stage.append(this.panel);
 
@@ -133,6 +144,7 @@ export class StreetsScreen {
   }
 
   destroy(): void {
+    cancelAnimationFrame(this.timelapseFrame);
     this.panel.remove();
     this.view.onStreet = () => {};
     this.view.setStreetBase(null);
@@ -141,6 +153,7 @@ export class StreetsScreen {
   }
 
   private answer(text: string): void {
+    this.endTimelapse();
     const answer = this.streets.match(text);
     if (answer.kind === "unknown") return this.say(text.trim() ? `No street of ${this.map.name} is called “${text.trim()}”.` : "");
     if (answer.kind === "ambiguous") {
@@ -167,6 +180,7 @@ export class StreetsScreen {
 
   /** A found street tapped on the map: what it is and where its name comes from. */
   private tell(g: StreetGroup): void {
+    this.endTimelapse();
     this.latest = g;
     this.update();
     const arrondissements = [...new Set(g.voies.flatMap((v) => v.a))]
@@ -215,6 +229,36 @@ export class StreetsScreen {
     }
   }
 
+  /** Lights up the finds again one by one, in the order they were saved. */
+  private timelapse(): void {
+    if (this.timelapseFrame) {
+      this.endTimelapse();
+      return this.say("");
+    }
+    const all = [...this.found];
+    if (all.length === 0) return this.say("Find a street first.");
+    const duration = Math.min(TIMELAPSE_MS.max, Math.max(TIMELAPSE_MS.min, all.length * TIMELAPSE_MS.each));
+    this.view.resetZoom();
+    this.replay.textContent = "Stop the replay";
+    const start = performance.now();
+    const step = (now: number) => {
+      const n = Math.min(all.length, Math.max(1, Math.ceil(((now - start) / duration) * all.length)));
+      this.update(all.slice(0, n), all[n - 1]);
+      this.say(`Replay: ${count(n)} / ${count(all.length)} names`);
+      this.timelapseFrame = n < all.length ? requestAnimationFrame(step) : 0;
+      if (!this.timelapseFrame) this.replay.textContent = REPLAY;
+    };
+    this.timelapseFrame = requestAnimationFrame(step);
+  }
+
+  private endTimelapse(): void {
+    if (!this.timelapseFrame) return;
+    cancelAnimationFrame(this.timelapseFrame);
+    this.timelapseFrame = 0;
+    this.replay.textContent = REPLAY;
+    this.update();
+  }
+
   private unfold(on: boolean): void {
     this.panel.classList.toggle("unfolded", on);
     this.more.textContent = on ? "Less" : "More";
@@ -231,8 +275,9 @@ export class StreetsScreen {
     this.view.fitBoxes(groups.flatMap((g) => g.voies.map((v) => v.b)), 3);
   }
 
-  private update(): void {
-    const p = this.streets.progress(this.found);
+  /** Shows `found` on the map and in the counters: all finds, or the first ones during a replay. */
+  private update(found = this.found, latest = this.latest): void {
+    const p = this.streets.progress(found);
     const share = p.m2 / this.streets.totalM2;
     this.stats.replaceChildren(
       h("strong", {}, count(p.names)),
@@ -247,7 +292,7 @@ export class StreetsScreen {
     );
     this.bar.style.width = `${Math.min(100, share * 100)}%`;
     this.recent.replaceChildren(
-      ...this.found
+      ...found
         .slice(-RECENT)
         .reverse()
         .map((g) => {
@@ -256,7 +301,7 @@ export class StreetsScreen {
           return h("li", {}, b);
         }),
     );
-    if (this.found.length === 0) this.recent.replaceChildren(h("li", { class: "muted" }, "Nothing yet."));
+    if (found.length === 0) this.recent.replaceChildren(h("li", { class: "muted" }, "Nothing yet."));
     this.byArrondissement.replaceChildren(
       ...p.arrondissements.map((s, i) =>
         h(
@@ -272,6 +317,6 @@ export class StreetsScreen {
       name: voieList(g),
       d: g.voies.map((v) => v.d).join(""),
     });
-    this.view.setFoundStreets(this.found.map(view), this.latest ? view(this.latest) : null);
+    this.view.setFoundStreets(found.map(view), latest ? view(latest) : null);
   }
 }

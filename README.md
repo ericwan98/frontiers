@@ -10,10 +10,12 @@ The world, Europe, Africa and South America also have a capitals mode: you get a
 pin where you think it is, on the same map without borders.
 
 Paris also has a streets mode: type street names and watch them light up on the map, with no end
-and no timer. Counters show the names found out of about 5,400, the share of the street area
+and no timer. A name finds its faubourg and porte too: "Saint-Martin" also lights the rue du
+Faubourg Saint-Martin. Counters show the names found out of about 5,400, the share of the street area
 they cover (overall and per arrondissement) and their length out of about 1,570 km. Tap a found
 street to see where its name comes from. Confetti mark milestones (1%, 5%, 10%… of the area, 100,
-500, 1,000… names). Progress stays in the browser. "Copy a link to merge your finds" gives a link
+500, 1,000… names). "Replay your finds" lights them up again in the order they were found.
+Progress stays in the browser. "Copy a link to merge your finds" gives a link
 that adds them to whichever browser opens it: another device, or a friend's. The link has one bit
 per name, deflated: under 1,000 characters even with half of Paris found.
 
@@ -95,7 +97,7 @@ Players keep weeks of street finds in their browser: no change may lose or alter
 `test/saves.test.ts` pins what saves rely on: the `localStorage` key and format, every name in
 `order` still finding its streets, the order and grouping of the first 5,401 names, and progress
 links made on 2026-11-19. A new find only appends to the save, so a name the data no longer knows
-stays saved. If one of these tests fails, fix the change, not the test. A street the register
+stays saved, and the save keeps the order of finds that the replay shows. If one of these tests fails, fix the change, not the test. A street the register
 renames needs an alias to its new name, not a removal.
 
 ## Deploy
