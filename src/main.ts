@@ -27,6 +27,8 @@ const modeKey = (mapId: string) => `frontiers:${mapId}:mode`;
 const OLD_MODE_KEY = "frontiers:mode";
 /** Total of the last finished game on each seed. */
 const PLAYED_KEY = "frontiers:played";
+/** "1" while the satellite view is on, on every map that has one. Display only: scores are the same. */
+const SATELLITE_KEY = "frontiers:satellite";
 const MAX_PLAYED = 200;
 const REPLAY_MS = 1100;
 /** Where a map's game and best scores are stored: each mode has its own. */
@@ -81,6 +83,7 @@ async function useMap(next: MapEntry): Promise<boolean> {
   map = loaded;
   view?.destroy();
   view = new MapView($("stage"), map);
+  showSatellite();
   setEraser(false);
   view.onStroke = (stroke) => {
     if (!game) return;
@@ -296,6 +299,21 @@ function setSound(on: boolean): void {
   b.textContent = on ? "🔊" : "🔇";
   b.setAttribute("aria-label", on ? tr("Mute sounds", "Couper le son") : tr("Turn sounds on", "Activer le son"));
   b.title = b.getAttribute("aria-label")!;
+}
+
+function setSatellite(on: boolean): void {
+  if (on) localStorage.setItem(SATELLITE_KEY, "1");
+  else localStorage.removeItem(SATELLITE_KEY);
+  showSatellite();
+}
+
+/** Matches the satellite button and picture to the stored choice and the map on screen. */
+function showSatellite(): void {
+  const on = localStorage.getItem(SATELLITE_KEY) === "1";
+  const b = $("satellite");
+  b.hidden = !entry.satellite;
+  b.setAttribute("aria-pressed", String(on));
+  view?.setSatellite(on ? entry.satellite : undefined);
 }
 
 function setEraser(on: boolean): void {
@@ -1105,6 +1123,7 @@ function translatePage(): void {
     ["skip", "Passer", "Abandonner celui-ci : 0 point"],
     ["submit", "Valider", "Valider (Entrée)"],
     ["results-button", "Résultats", null],
+    ["satellite", null, "Vue satellite"],
   ];
   for (const [id, text, title] of texts) {
     const el = $(id);
@@ -1112,7 +1131,7 @@ function translatePage(): void {
     if (text !== null) el.firstChild!.textContent = text;
     if (title !== null) el.title = title;
   }
-  for (const [id, label] of [["zoom-in", "Zoomer"], ["zoom-out", "Dézoomer"], ["zoom-reset", "Réinitialiser le zoom"]]) {
+  for (const [id, label] of [["zoom-in", "Zoomer"], ["zoom-out", "Dézoomer"], ["zoom-reset", "Réinitialiser le zoom"], ["satellite", "Vue satellite"]]) {
     $(id).setAttribute("aria-label", label);
   }
 }
@@ -1136,6 +1155,7 @@ $("zoom-reset").addEventListener("click", () => view?.resetZoom());
 $("results-button").addEventListener("click", closeReplay);
 $("sound").addEventListener("click", () => setSound(isMuted()));
 $("lang").addEventListener("click", () => setLang(tr("fr", "en")));
+$("satellite").addEventListener("click", () => setSatellite(localStorage.getItem(SATELLITE_KEY) !== "1"));
 translatePage();
 setSound(!isMuted());
 

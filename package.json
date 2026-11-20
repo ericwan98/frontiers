@@ -7,7 +7,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "check": "tsc && vitest run && vite build",
-    "maps": "for m in world europe africa south-america us france paris paris-streets; do node scripts/build-$m.mjs || exit 1; done"
+    "maps": "for m in world europe africa south-america us france paris paris-streets; do node scripts/build-$m.mjs || exit 1; done",
+    "satellite": "for m in world europe africa south-america us france; do node scripts/build-$m.mjs --satellite || exit 1; done"
   },
   "devDependencies": {
     "@types/d3-geo": "^3.1.1",
@@ -15,6 +16,7 @@
     "@types/topojson-simplify": "^3.0.3",
     "d3-geo": "^3.1.2",
     "d3-geo-projection": "^4.0.0",
+    "sharp": "^0.35.5",
     "topojson-client": "^3.1.0",
     "topojson-simplify": "^3.0.3",
     "typescript": "^7.0.2",

@@ -955,3 +955,39 @@ button {
   font-size: 1.1rem;
   line-height: 1;
 }
+
+/* Satellite: the picture replaces the flat land and sea; lines turn white and thicker to show on it. */
+.map.satellite :is(.context, .land, .water) {
+  fill: none;
+  stroke: rgb(255 255 255 / 0.35);
+  stroke-width: 0.6;
+}
+
+/* Darker where nothing is played, as the grey is on the plain map. */
+.map.satellite .context {
+  fill: rgb(0 0 0 / 0.4);
+}
+
+.map.satellite .placed {
+  fill-opacity: 0.6;
+  stroke-width: 2;
+}
+
+.map.satellite :is(.placed.focus, .draft) {
+  stroke: #fff !important;
+  stroke-width: 2.6;
+}
+
+.map.satellite :is(.truth path, .truth-pins line, .live) {
+  stroke: #fff;
+  stroke-width: 2.4;
+}
+
+.map.satellite .live {
+  fill: rgb(255 255 255 / 0.12);
+}
+
+.zoom .satellite-toggle[aria-pressed="true"] {
+  background: #ffe9df;
+  border-color: var(--accent);
+}

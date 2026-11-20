@@ -78,6 +78,8 @@ export function writeMap({ id, name, height, projection, regions, context = [], 
   const json = JSON.stringify(map);
   writeFileSync(new URL(`../src/maps/${id}.json`, import.meta.url), json);
   console.log(`${id}.json: ${regions.length} regions, ${WIDTH}x${height}, ${(json.length / 1024).toFixed(0)} KB`);
+  // With --satellite, also renders the map's imagery; it needs sharp and a 0.3 GB download.
+  if (process.argv.includes("--satellite")) return import("./satellite.mjs").then((m) => m.satellite(id, projection, height));
 }
 
 /** Downloads a JSON file, failing loudly. */

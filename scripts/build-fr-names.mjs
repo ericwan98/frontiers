@@ -23,6 +23,8 @@ const OVERRIDES = {
   Kyiv: "Kyiv",
   // Natural Earth has "État de New York"; on a map of states "New York" is enough, as for Washington.
   "New York": "New York",
+  // Natural Earth has the official "Viêt Nam"; everyday French writes "Vietnam".
+  Vietnam: "Vietnam",
 };
 
 const read = (id) => JSON.parse(readFileSync(new URL(`../src/maps/${id}.json`, import.meta.url), "utf8"));

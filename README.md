@@ -94,6 +94,12 @@ npm run check      # typecheck + tests + build
   capital names come from `src/maps/fr-names.json`, built by `scripts/build-fr-names.mjs` from
   Natural Earth and IGN; `test/i18n.test.ts` checks every region has one. Saves, seeds and best
   scores hold ids, never names, so switching changes nothing in them.
+- Satellite view: the 🛰️ button under the flag puts NASA Blue Marble imagery (July 2004, public
+  domain) under every map but Paris, whose streets would give the borders away. `npm run satellite`
+  re-runs those builders with `--satellite`: `scripts/satellite.mjs` reprojects the imagery with
+  each map's own projection to `src/maps/satellite/<id>.webp` (2.4 pixels a map unit), downloading
+  the sources to `.cache/` once. It is display only: scores and records are shared with the plain
+  map, and shared images show the plain map.
 - A map is just `{ width, height, kmPerUnit, land, context, water?, regions }`, so another variant is
   another build script, JSON file and entry in `src/maps/index.ts`.
 - There is no backend: `dist/` is static, and best scores and the game in progress live in

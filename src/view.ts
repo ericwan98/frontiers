@@ -264,7 +264,9 @@ export class MapView {
    */
   snapshot(): SVGSVGElement {
     const copy = this.svg.cloneNode(true) as SVGSVGElement;
-    copy.querySelectorAll(".draft, .live").forEach((n) => n.remove());
+    // Exports keep the plain map: an SVG drawn as an image can't load the satellite picture.
+    copy.querySelectorAll(".draft, .live, .satellite").forEach((n) => n.remove());
+    copy.classList.remove("satellite");
     copy.setAttribute("xmlns", SVG);
     copy.setAttribute("viewBox", `0 0 ${this.map.width} ${this.map.height}`);
     copy.setAttribute("width", String(this.map.width));
@@ -275,6 +277,15 @@ export class MapView {
     style.textContent = EXPORT_CSS;
     copy.prepend(style);
     return copy;
+  }
+
+  /** Shows `url` under the map instead of the flat land and sea; no `url` turns it off. */
+  setSatellite(url?: string): void {
+    this.svg.querySelector("image.satellite")?.remove();
+    this.svg.classList.toggle("satellite", Boolean(url));
+    if (!url) return;
+    const image = el("image", { class: "satellite", href: url, width: this.map.width, height: this.map.height, preserveAspectRatio: "none" });
+    this.svg.querySelector(".sea")!.after(image);
   }
 
   resetZoom(): void {
