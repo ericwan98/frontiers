@@ -1,7 +1,8 @@
 // What players send each other. A link replays the same seed and can carry the sender's
 // scores, so whoever opens it gets compared region by region.
 import { awards } from "./awards.ts";
-import type { Game, Scores } from "./game.ts";
+import { levelName, type Game, type Scores } from "./game.ts";
+import { tr } from "./i18n.ts";
 import { MAX_POINTS, square } from "./scoring.ts";
 import { parseSeed, type Seed } from "./seed.ts";
 
@@ -51,10 +52,10 @@ export function shareText(g: Game, noun: string): string {
   // A good shot is less fun to read about than a blunder.
   const blunder = g.phase === "over" ? awards(g).find((a) => !a.good) : undefined;
   return [
-    `Frontiers · ${g.title}, ${g.order.length} ${noun}${g.level === "hard" ? "" : ` (${g.level})`}`,
+    `Frontiers · ${g.title}, ${g.order.length} ${noun}${g.level === "hard" ? "" : ` (${levelName(g.level)})`}`,
     `${g.total} / ${g.order.length * MAX_POINTS}`,
     ...rows,
     ...(blunder ? [`${blunder.emoji} ${blunder.says("My")}`] : []),
-    ...(g.seed ? [`Beat me: ${challengeUrl(g.seed, g.scores)}`] : []),
+    ...(g.seed ? [`${tr("Beat me:", "Bats-moi :")} ${challengeUrl(g.seed, g.scores)}`] : []),
   ].join("\n");
 }

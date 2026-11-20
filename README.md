@@ -89,6 +89,11 @@ npm run check      # typecheck + tests + build
   distance between centroids, relative to the region's size and the map's. A capital's pin scores
   100 within half a percent of the map's width (23 km on Europe, 160 km on the world), then loses
   a factor e every 5% of the width.
+- English or French: the flag at the top right switches, and a French browser starts in French.
+  Texts sit next to each other as `tr("Skip", "Passer")` (`src/i18n.ts`). French region and
+  capital names come from `src/maps/fr-names.json`, built by `scripts/build-fr-names.mjs` from
+  Natural Earth and IGN; `test/i18n.test.ts` checks every region has one. Saves, seeds and best
+  scores hold ids, never names, so switching changes nothing in them.
 - A map is just `{ width, height, kmPerUnit, land, context, water?, regions }`, so another variant is
   another build script, JSON file and entry in `src/maps/index.ts`.
 - There is no backend: `dist/` is static, and best scores and the game in progress live in

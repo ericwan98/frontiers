@@ -1,13 +1,14 @@
 // End-of-game superlatives: the funniest things a finished map says about its author.
 import type { Game, Placement } from "./game.ts";
 import { area, bbox, contains, intersection, type Box } from "./geometry.ts";
+import { num, percent, tr } from "./i18n.ts";
 
 export interface Award {
   emoji: string;
   title: string;
   /** Region the award is about, to show it on the map. */
   regionId: string;
-  /** The award as a sentence, about "Your" or "My" map. */
+  /** The award as a sentence, about "Your" or "My" map. French sentences say the same for both. */
   says: (whose: "Your" | "My") => string;
   /** Praise rather than a blunder: shared results leave it out. */
   good?: boolean;
@@ -23,13 +24,12 @@ const LOST_MAX_POINTS = 30;
 const BULLSEYE_MIN_POINTS = 90;
 
 export function formatKm(km: number): string {
-  if (km >= 10) return `${Math.round(km).toLocaleString("en")} km`;
-  if (km >= 1) return `${km.toFixed(1)} km`;
+  if (km >= 10) return `${num(Math.round(km))} km`;
+  if (km >= 1) return `${num(km, 1)} km`;
   return `${Math.round(km * 100) * 10} m`;
 }
 
 const overlaps = (a: Box, b: Box) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
-const percent = (share: number) => `${Math.round(share * 100)}%`;
 
 const earned = new WeakMap<Game, Award[]>();
 
@@ -54,9 +54,12 @@ function lost(g: Game, scored: Scored[], name: (id: string) => string): Award[] 
   return [
     {
       emoji: "🧭",
-      title: "Lost",
+      title: tr("Lost", "Perdu"),
       regionId: farthest.regionId,
-      says: (whose) => `${whose} ${name(farthest.regionId)} is ${formatKm(farthest.score.distanceKm ?? 0)} from home`,
+      says: (whose) => {
+        const km = formatKm(farthest.score.distanceKm ?? 0);
+        return tr(`${whose} ${name(farthest.regionId)} is ${km} from home`, `${name(farthest.regionId)} : à ${km} de sa vraie place`);
+      },
     },
   ];
 }
@@ -70,7 +73,12 @@ function cityAwards(g: Game, pinned: Scored[]): Award[] {
     contains(g.map.water ?? [], p.pin!) || !(contains(g.map.land, p.pin!) || contains(g.map.context, p.pin!));
   const sunk = worstFirst.find(wet);
   if (sunk) {
-    out.push({ emoji: "🌊", title: "Atlantis", regionId: sunk.regionId, says: (whose) => `${whose} ${city(sunk.regionId)} is underwater` });
+    out.push({
+      emoji: "🌊",
+      title: tr("Atlantis", "Atlantide"),
+      regionId: sunk.regionId,
+      says: (whose) => tr(`${whose} ${city(sunk.regionId)} is underwater`, `${city(sunk.regionId)} : sous l'eau`),
+    });
   }
 
   for (const p of worstFirst) {
@@ -78,9 +86,9 @@ function cityAwards(g: Game, pinned: Scored[]): Award[] {
     if (!host) continue;
     out.push({
       emoji: "🛂",
-      title: "Border control",
+      title: tr("Border control", "Douane"),
       regionId: p.regionId,
-      says: (whose) => `${whose} ${city(p.regionId)} is in ${host.name}`,
+      says: (whose) => tr(`${whose} ${city(p.regionId)} is in ${host.name}`, `${city(p.regionId)} : en territoire étranger (${host.name})`),
     });
     break;
   }
@@ -91,12 +99,14 @@ function cityAwards(g: Game, pinned: Scored[]): Award[] {
   if (best.score.points >= BULLSEYE_MIN_POINTS) {
     out.push({
       emoji: "🎯",
-      title: "Bullseye",
+      title: tr("Bullseye", "Dans le mille"),
       regionId: best.regionId,
-      says: (whose) =>
-        (best.score.distanceKm ?? 0) < 1
-          ? `${whose} ${city(best.regionId)} is spot on`
-          : `${whose} ${city(best.regionId)} landed ${formatKm(best.score.distanceKm ?? 0)} from the real one`,
+      says: (whose) => {
+        const [c, km] = [city(best.regionId), formatKm(best.score.distanceKm ?? 0)];
+        return (best.score.distanceKm ?? 0) < 1
+          ? tr(`${whose} ${c} is spot on`, `${c} : pile au bon endroit`)
+          : tr(`${whose} ${c} landed ${km} from the real one`, `${c} : à ${km} de la vraie`);
+      },
       good: true,
     });
   }
@@ -123,29 +133,30 @@ function borderAwards(g: Game, drawn: Scored[]): Award[] {
     const { share, from, by } = takeover;
     out.push({
       emoji: "🏴‍☠️",
-      title: "Hostile takeover",
+      title: tr("Hostile takeover", "OPA hostile"),
       regionId: by,
-      says: (whose) => `${whose} ${name(by)} took ${percent(share)} of ${name(from)}`,
+      says: (whose) => tr(`${whose} ${name(by)} took ${percent(share)} of ${name(from)}`, `${name(by)} → ${name(from)} : ${percent(share)} annexés`),
     });
   }
 
   const byRatio = [...drawn].sort((a, b) => ratio(b) - ratio(a));
   const [biggest, smallest] = [byRatio[0], byRatio.at(-1)!];
   if (ratio(biggest) >= INFLATED_MIN) {
-    const times = ratio(biggest).toFixed(ratio(biggest) < 10 ? 1 : 0);
+    const times = num(ratio(biggest), ratio(biggest) < 10 ? 1 : 0);
     out.push({
       emoji: "🎈",
       title: "Inflation",
       regionId: biggest.regionId,
-      says: (whose) => `${whose} ${name(biggest.regionId)} is ${times}× its real size`,
+      says: (whose) => tr(`${whose} ${name(biggest.regionId)} is ${times}× its real size`, `${name(biggest.regionId)} : ${times} × sa vraie taille`),
     });
   }
   if (ratio(smallest) <= SHRUNK_MAX) {
     out.push({
       emoji: "🔬",
-      title: "Microstate",
+      title: tr("Microstate", "Micro-État"),
       regionId: smallest.regionId,
-      says: (whose) => `${whose} ${name(smallest.regionId)} is ${percent(ratio(smallest))} of its real size`,
+      says: (whose) =>
+        tr(`${whose} ${name(smallest.regionId)} is ${percent(ratio(smallest))} of its real size`, `${name(smallest.regionId)} : ${percent(ratio(smallest))} de sa vraie taille`),
     });
   }
 
@@ -156,9 +167,10 @@ function borderAwards(g: Game, drawn: Scored[]): Award[] {
   if (overlap(sharpest) >= SNIPER_MIN) {
     out.push({
       emoji: "🎯",
-      title: "Sniper",
+      title: tr("Sniper", "Tireur d'élite"),
       regionId: sharpest.regionId,
-      says: (whose) => `${whose} ${name(sharpest.regionId)} overlaps the real one by ${percent(overlap(sharpest))}`,
+      says: (whose) =>
+        tr(`${whose} ${name(sharpest.regionId)} overlaps the real one by ${percent(overlap(sharpest))}`, `${name(sharpest.regionId)} : ${percent(overlap(sharpest))} de recouvrement`),
       good: true,
     });
   }

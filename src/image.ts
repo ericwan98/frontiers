@@ -1,5 +1,6 @@
 // Turns the finished map into a PNG with a title, for sharing the result as a picture.
 import type { Game } from "./game.ts";
+import { tr } from "./i18n.ts";
 import { MAX_POINTS } from "./scoring.ts";
 
 const SCALE = 2;
@@ -26,13 +27,13 @@ export async function renderPng(g: Game, svg: SVGSVGElement): Promise<Blob> {
     ctx.fillStyle = "#1f2328";
     ctx.textBaseline = "middle";
     ctx.font = "800 26px system-ui, sans-serif";
-    ctx.fillText(`${g.title}, according to me`, 20, HEADER / 2);
+    ctx.fillText(tr(`${g.title}, according to me`, `${g.title}, selon moi`), 20, HEADER / 2);
     ctx.textAlign = "right";
     ctx.fillStyle = "#fa500f";
     ctx.fillText(`${g.total} / ${g.order.length * MAX_POINTS}`, width - 20, HEADER / 2);
     ctx.font = "500 13px system-ui, sans-serif";
     ctx.fillStyle = "#66707a";
-    ctx.fillText(g.seed ? `Frontiers · seed ${g.seed}` : "Frontiers", width - 20, HEADER + height + FOOTER / 2);
+    ctx.fillText(g.seed ? `Frontiers · ${tr("seed", "graine")} ${g.seed}` : "Frontiers", width - 20, HEADER + height + FOOTER / 2);
 
     return await new Promise<Blob>((resolve, reject) =>
       canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("canvas export failed"))), "image/png"),

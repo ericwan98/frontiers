@@ -1,4 +1,5 @@
 import type { GameMap } from "./game.ts";
+import { tr } from "./i18n.ts";
 import { area, centroid, intersection, type MultiPolygon, type Pair } from "./geometry.ts";
 
 export interface Score {
@@ -48,11 +49,11 @@ export function pinScore(pin: Pair, truth: Pair, map: Pick<GameMap, "width" | "k
 
 /** Score bands, best first: a name for the result card and a square for shared results. */
 const TIERS = [
-  { min: 85, name: "Cartographer", square: "🟩" },
-  { min: 65, name: "Close enough", square: "🟨" },
-  { min: 40, name: "Rough idea", square: "🟧" },
-  { min: 15, name: "Wrong neighbourhood", square: "🟥" },
-  { min: 0, name: "Here be dragons", square: "⬛" },
+  { min: 85, name: tr("Cartographer", "Cartographe"), square: "🟩" },
+  { min: 65, name: tr("Close enough", "Pas loin"), square: "🟨" },
+  { min: 40, name: tr("Rough idea", "Une vague idée"), square: "🟧" },
+  { min: 15, name: tr("Wrong neighbourhood", "Mauvais quartier"), square: "🟥" },
+  { min: 0, name: tr("Here be dragons", "Ici vivent des dragons"), square: "⬛" },
 ];
 
 const tier = (points: number) => TIERS.find((t) => points >= t.min)!;

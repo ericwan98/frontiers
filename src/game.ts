@@ -1,4 +1,5 @@
 import { difference, intersection, loop, union, type MultiPolygon, type Pair, type Ring } from "./geometry.ts";
+import { tr } from "./i18n.ts";
 import { pinScore, score, type Score } from "./scoring.ts";
 
 /** Draw each region's borders, or drop a pin on its capital. */
@@ -11,6 +12,10 @@ export type Mode = "borders" | "cities";
  */
 export type Level = "easy" | "normal" | "hard";
 export const LEVELS: Level[] = ["easy", "normal", "hard"];
+/** "Europe", or "Europe capitals" in cities mode. */
+export const gameTitle = (mapName: string, mode: Mode) =>
+  mode === "cities" ? tr(`${mapName} capitals`, `${mapName} · capitales`) : mapName;
+export const levelName = (level: Level) => tr(level, { easy: "facile", normal: "normal", hard: "difficile" }[level]);
 
 export interface City {
   name: string;
@@ -139,9 +144,8 @@ export class Game {
     return this.placements.map((p) => p.score?.points ?? null);
   }
 
-  /** "Europe", or "Europe capitals" in cities mode. */
   get title(): string {
-    return this.mode === "cities" ? `${this.map.name} capitals` : this.map.name;
+    return gameTitle(this.map.name, this.mode);
   }
 
   region(id: string): Region {

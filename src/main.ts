@@ -1,8 +1,9 @@
 import "./style.css";
-import { Game, LEVELS, levelOf, type GameMap, type Level, type Mode, type Placement, type SavedGame, type Scores } from "./game.ts";
+import { Game, gameTitle, LEVELS, levelName, levelOf, type GameMap, type Level, type Mode, type Placement, type SavedGame, type Scores } from "./game.ts";
 import { awards, formatKm } from "./awards.ts";
 import { confetti } from "./confetti.ts";
 import { $, button, h } from "./dom.ts";
+import { lang, num, percent, setLang, SWITCHED_KEY, tr } from "./i18n.ts";
 import { renderPng } from "./image.ts";
 import { MAPS, type MapEntry } from "./maps/index.ts";
 import { pointsBox } from "./geometry.ts";
@@ -10,7 +11,7 @@ import { BULLSEYE_SHARE, MAX_POINTS, square, verdict } from "./scoring.ts";
 import { dailySeed, dayCode, formatSeed, newSeed, parseSeed, sameSeed, seededOrder, streak, type Seed, type Setup } from "./seed.ts";
 import { fanfare, isMuted, scoreSound, setMuted } from "./sound.ts";
 import { Streets, unpackNames } from "./streets.ts";
-import { addFound, forgetFound, loadFound, STREETS_PARAM, StreetsScreen } from "./streets-screen.ts";
+import { addFound, forgetFound, loadFound, STREETS_PARAM, streetsTitle, StreetsScreen } from "./streets-screen.ts";
 import { challengeUrl, readChallenge, readPasted, shareText, sum, type Challenge } from "./share.ts";
 import { colorFor, MapView, type Pin, type TruthPin } from "./view.ts";
 
@@ -32,10 +33,16 @@ const REPLAY_MS = 1100;
 const slot = (mapId: string, mode: Mode) => (mode === "cities" ? `${mapId}-cities` : mapId);
 const saveKey = (mapId: string, mode: Mode) => `frontiers:${slot(mapId, mode)}:game`;
 const bestKey = (mapId: string, mode: Mode) => `frontiers:${slot(mapId, mode)}:best`;
-const CAPITALS: [string, string] = ["capital", "capitals"];
+const CAPITALS: [string, string] = tr(["capital", "capitals"], ["capitale", "capitales"]);
 
-
-const an = (word: string) => (/^[aeiou]/i.test(word) ? `an ${word}` : `a ${word}`);
+/** French nouns of the game that are feminine; the others are masculine. */
+const feminine = (word: string) => ["capitale", "région"].includes(word);
+const an = (word: string) =>
+  tr(/^[aeiou]/i.test(word) ? `an ${word}` : `a ${word}`, feminine(word) ? `une ${word}` : `un ${word}`);
+/** "Next country", "Région suivante". */
+const nextOne = (word: string) =>
+  tr(`Next ${word}`, `${word[0].toUpperCase()}${word.slice(1)} ${feminine(word) ? "suivante" : "suivant"}`);
+const upper = (word: string) => word[0].toUpperCase() + word.slice(1);
 
 
 let entry: MapEntry = MAPS.find((m) => m.id === localStorage.getItem(LAST_MAP_KEY)) ?? MAPS[0];
@@ -77,7 +84,7 @@ async function useMap(next: MapEntry): Promise<boolean> {
   setEraser(false);
   view.onStroke = (stroke) => {
     if (!game) return;
-    if (!game.addStroke(stroke)) toast("Nothing left to claim there. Draw on free land.");
+    if (!game.addStroke(stroke)) toast(tr("Nothing left to claim there. Draw on free land.", "Plus rien à prendre ici. Dessine sur une terre libre."));
     render();
   };
   view.onPin = (at) => {
@@ -184,11 +191,11 @@ async function playSeed({ seed, rival }: Challenge): Promise<void> {
 
 /** Error to show for a pasted seed, or null if it can be played. */
 function seedProblem(seed: Seed | null): string | null {
-  if (!seed) return "Paste a link or a seed like europe-10-K3F9X.";
+  if (!seed) return tr("Paste a link or a seed like europe-10-K3F9X.", "Colle un lien ou une graine comme europe-10-K3F9X.");
   const target = MAPS.find((m) => m.id === seed.mapId);
-  if (!target) return `No map called "${seed.mapId}".`;
-  if (seed.mode === "cities" && !target.cities) return `${target.name} has no capitals to find.`;
-  if (seed.count < 1 || seed.count > target.count) return `${target.name} has ${target.count} ${target.noun[1]}.`;
+  if (!target) return tr(`No map called "${seed.mapId}".`, `Aucune carte ne s'appelle « ${seed.mapId} ».`);
+  if (seed.mode === "cities" && !target.cities) return tr(`${target.name} has no capitals to find.`, `${target.name} : pas de capitales à trouver.`);
+  if (seed.count < 1 || seed.count > target.count) return tr(`${target.name} has ${target.count} ${target.noun[1]}.`, `${target.name} compte ${target.count} ${target.noun[1]}.`);
   return null;
 }
 
@@ -214,7 +221,7 @@ async function shareImage(g: Game): Promise<void> {
   try {
     // Safari only allows the write if the item is created right in the click, so it takes a promise.
     await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
-    toast("Image copied: paste it in the group chat");
+    toast(tr("Image copied: paste it in the group chat", "Image copiée : colle-la dans le groupe"));
   } catch (error) {
     console.warn("image copy failed, downloading instead", error);
     download(imageFile(g, await png));
@@ -225,10 +232,10 @@ function download(file: File): void {
   const a = h("a", { href: URL.createObjectURL(file), download: file.name }) as HTMLAnchorElement;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-  toast(`Saved ${file.name}`);
+  toast(tr(`Saved ${file.name}`, `${file.name} enregistré`));
 }
 
-const invite = (seed: string) => copy(challengeUrl(seed), "Link copied: friends who open it get the same order");
+const invite = (seed: string) => copy(challengeUrl(seed), tr("Link copied: friends who open it get the same order", "Lien copié : tes amis qui l'ouvrent ont le même ordre"));
 
 let toastTimer = 0;
 function toast(message: string): void {
@@ -242,7 +249,11 @@ function toast(message: string): void {
 function submit(): void {
   if (!game) return;
   const placement = game.submit();
-  if (!placement) return toast(game.mode === "cities" ? "Drop a pin first, or skip." : "Draw something first, or skip.");
+  if (!placement) return toast(
+      game.mode === "cities"
+        ? tr("Drop a pin first, or skip.", "Pose d'abord une épingle, ou passe.")
+        : tr("Draw something first, or skip.", "Dessine d'abord quelque chose, ou passe."),
+    );
   const points = placement.score?.points ?? 0;
   scoreSound(points);
   if (points >= 85) confetti(60);
@@ -283,7 +294,7 @@ function setSound(on: boolean): void {
   setMuted(!on);
   const b = $("sound");
   b.textContent = on ? "🔊" : "🔇";
-  b.setAttribute("aria-label", on ? "Mute sounds" : "Turn sounds on");
+  b.setAttribute("aria-label", on ? tr("Mute sounds", "Couper le son") : tr("Turn sounds on", "Activer le son"));
   b.title = b.getAttribute("aria-label")!;
 }
 
@@ -363,27 +374,32 @@ function replayCard(g: Game, at: number, playing: boolean): HTMLElement[] {
   const last = g.placements.length - 1;
   const prev = button("◀", () => inspect(at - 1));
   prev.disabled = at === 0;
-  prev.title = "Previous (←)";
-  const nextOne = button("▶", () => inspect(at + 1));
-  nextOne.disabled = at === last;
-  nextOne.title = "Next (→)";
-  const play = button(playing ? "Pause" : "Play", () => (playing ? inspect(at) : inspect(at === last ? 0 : at, true)));
+  prev.title = tr("Previous (←)", "Précédent (←)");
+  const forward = button("▶", () => inspect(at + 1));
+  forward.disabled = at === last;
+  forward.title = tr("Next (→)", "Suivant (→)");
+  const play = button(playing ? "Pause" : tr("Play", "Lecture"), () => (playing ? inspect(at) : inspect(at === last ? 0 : at, true)));
   return [
-    h("p", { class: "muted replay-step" }, `Replay · ${at + 1} / ${g.placements.length}`),
+    h("p", { class: "muted replay-step" }, `${tr("Replay", "Revoir")} · ${at + 1} / ${g.placements.length}`),
     resultCard(g, g.placements[at]),
-    h("div", { class: "replay-controls" }, prev, play, nextOne, button("Results", closeReplay, "primary")),
+    h("div", { class: "replay-controls" }, prev, play, forward, button(tr("Results", "Résultats"), closeReplay, "primary")),
   ];
 }
 
 function resultCard(g: Game, p: Placement): HTMLElement {
   const region = g.region(p.regionId);
   const title = g.mode === "cities" ? h("h2", {}, g.target(p.regionId), h("small", { class: "muted" }, ` ${region.name}`)) : h("h2", {}, region.name);
-  if (!p.score) return h("div", {}, title, h("p", { class: "muted" }, "Skipped. 0 points."), ...rivalLine(g, p));
+  if (!p.score) return h("div", {}, title, h("p", { class: "muted" }, tr("Skipped. 0 points.", "Passé. 0 point.")), ...rivalLine(g, p));
   const { points, overlap, distanceKm } = p.score;
-  const off = `${formatKm(distanceKm ?? 0)} off`;
-  const help = g.level === "hard" ? "" : g.mode === "cities" ? " · real spot circled" : " · real border dashed";
-  const next = g.phase === "reveal" && g.level === "easy" ? (g.mode === "cities" ? ", your pin goes there" : ", it takes your drawing's place") : "";
-  const detail = g.mode === "cities" ? `${off}${help}${next}` : `${Math.round((overlap ?? 0) * 100)}% overlap · ${off}${help}${next}`;
+  const off = tr(`${formatKm(distanceKm ?? 0)} off`, `à ${formatKm(distanceKm ?? 0)}`);
+  const help =
+    g.level === "hard"
+      ? ""
+      : g.mode === "cities"
+        ? tr(" · real spot circled", " · vrai lieu entouré")
+        : tr(" · real border dashed", " · vraie frontière en pointillés");
+  const next = g.phase === "reveal" && g.level === "easy" ? (g.mode === "cities" ? tr(", your pin goes there", ", ton épingle y va") : tr(", it takes your drawing's place", ", elle remplace ton dessin")) : "";
+  const detail = g.mode === "cities" ? `${off}${help}${next}` : `${percent(overlap ?? 0)} ${tr("overlap", "de recouvrement")} · ${off}${help}${next}`;
   return h(
     "div",
     {},
@@ -399,8 +415,14 @@ function rivalLine(g: Game, p: Placement): HTMLElement[] {
   if (!g.rival) return [];
   const theirs = g.rival[g.placements.indexOf(p)];
   const mine = p.score?.points ?? 0;
-  const text = theirs === null ? "Your friend skipped it" : `Your friend: ${theirs} ${square(theirs)}`;
-  const mood = mine > (theirs ?? 0) ? " · you take it" : mine === (theirs ?? 0) ? " · tie" : " · they take it";
+  const text =
+    theirs === null ? tr("Your friend skipped it", "Ton ami l'a passé") : `${tr("Your friend:", "Ton ami :")} ${theirs} ${square(theirs)}`;
+  const mood =
+    mine > (theirs ?? 0)
+      ? tr(" · you take it", " · pour toi")
+      : mine === (theirs ?? 0)
+        ? tr(" · tie", " · égalité")
+        : tr(" · they take it", " · pour ton ami");
   return [h("p", { class: "rival" }, text + mood)];
 }
 
@@ -414,10 +436,10 @@ function endCard(g: Game): HTMLElement {
     .map(({ p, i, theirs }) => {
       const row = h(
         "li",
-        { title: "Show it on the map" },
+        { title: tr("Show it on the map", "Le voir sur la carte") },
         h("span", {}, g.target(p.regionId)),
-        h("span", { class: "muted" }, p.score ? `${p.score.points}` : "skipped"),
-        ...(rival ? [h("span", { class: "muted" }, theirs === null ? "skipped" : `${theirs}`)] : []),
+        h("span", { class: "muted" }, p.score ? `${p.score.points}` : tr("skipped", "passé")),
+        ...(rival ? [h("span", { class: "muted" }, theirs === null ? tr("skipped", "passé") : `${theirs}`)] : []),
       );
       row.addEventListener("click", () => inspect(i));
       return row;
@@ -432,39 +454,55 @@ function endCard(g: Game): HTMLElement {
   return h(
     "div",
     { class: "card end" },
-    h("h1", {}, `${g.title}, according to you`),
+    h("h1", {}, tr(`${g.title}, according to you`, `${g.title}, selon toi`)),
     h("div", { class: "points" }, `${g.total}`, h("small", {}, ` / ${max}`)),
     ...(rival ? [duel(g, rival)] : []),
-    h("p", { class: "muted" }, `Best on ${g.order.length} ${many}${g.level === "hard" ? "" : ` in ${g.level} mode`}: ${best}`),
+    h(
+      "p",
+      { class: "muted" },
+      g.level === "hard"
+        ? tr(`Best on ${g.order.length} ${many}: ${best}`, `Record sur ${g.order.length} ${many} : ${best}`)
+        : tr(
+            `Best on ${g.order.length} ${many} in ${g.level} mode: ${best}`,
+            `Record sur ${g.order.length} ${many} en mode ${levelName(g.level)} : ${best}`,
+          ),
+    ),
     ...awardList(g),
-    ...(rival ? [h("p", { class: "ranking-head muted" }, h("span", {}, "You"), h("span", {}, "Friend"))] : []),
+    ...(rival ? [h("p", { class: "ranking-head muted" }, h("span", {}, tr("You", "Toi")), h("span", {}, tr("Friend", "Ami")))] : []),
     h("ol", { class: rival ? "ranking vs" : "ranking" }, ...rows),
-    h("label", { class: "toggle" }, truthToggle, g.mode === "cities" ? " Show the real cities" : " Show the real borders"),
+    h("label", { class: "toggle" }, truthToggle, g.mode === "cities" ? tr(" Show the real cities", " Montrer les vraies villes") : tr(" Show the real borders", " Montrer les vraies frontières")),
     ...(g.seed
       ? [
           h(
             "div",
             { class: "share" },
-            button("Copy result", () => copy(shareText(g, many), "Result copied: paste it in the group chat"), "primary"),
-            button("Copy link", () =>
-              copy(challengeUrl(g.seed!, g.scores), "Link copied: whoever opens it plays the same game against you"),
+            button(
+              tr("Copy result", "Copier le résultat"),
+              () => copy(shareText(g, many), tr("Result copied: paste it in the group chat", "Résultat copié : colle-le dans le groupe")),
+              "primary",
             ),
-            button(touchScreen() ? "Share image" : "Copy image", () => void shareImage(g)),
-            button("Download image", () => void renderPng(g, view!.snapshot()).then((png) => download(imageFile(g, png)))),
-            h("span", { class: "seed-line muted" }, "Seed ", h("code", {}, g.seed)),
+            button(tr("Copy link", "Copier le lien"), () =>
+              copy(
+                challengeUrl(g.seed!, g.scores),
+                tr("Link copied: whoever opens it plays the same game against you", "Lien copié : qui l'ouvre joue la même partie contre toi"),
+              ),
+            ),
+            button(touchScreen() ? tr("Share image", "Partager l'image") : tr("Copy image", "Copier l'image"), () => void shareImage(g)),
+            button(tr("Download image", "Télécharger l'image"), () => void renderPng(g, view!.snapshot()).then((png) => download(imageFile(g, png)))),
+            h("span", { class: "seed-line muted" }, tr("Seed ", "Graine "), h("code", {}, g.seed)),
           ),
         ]
       : []),
     h(
       "div",
       { class: "actions" },
-      button("▶ Replay", () => inspect(0, true)),
-      button("Look at the map", () => {
+      button(tr("▶ Replay", "▶ Revoir"), () => inspect(0, true)),
+      button(tr("Look at the map", "Voir la carte"), () => {
         endCardOpen = false;
         render();
       }),
-      button("Play again", showStart),
-      button("Other maps", showPicker),
+      button(tr("Play again", "Rejouer"), showStart),
+      button(tr("Other maps", "Autres cartes"), showPicker),
     ),
   );
 }
@@ -475,7 +513,7 @@ function awardList(g: Game): HTMLElement[] {
   const items = won.map((a) => {
     const at = g.placements.findIndex((p) => p.regionId === a.regionId);
     const b = button("", () => inspect(at), "award");
-    b.title = "Show it on the map";
+    b.title = tr("Show it on the map", "Le voir sur la carte");
     b.append(h("span", { class: "award-emoji" }, a.emoji), h("span", {}, h("strong", {}, a.title), " ", a.says("Your")));
     return h("li", {}, b);
   });
@@ -487,12 +525,23 @@ function duel(g: Game, rival: Scores): HTMLElement {
   const won = g.scores.filter((mine, i) => (mine ?? 0) > (rival[i] ?? 0)).length;
   const lost = g.scores.filter((mine, i) => (mine ?? 0) < (rival[i] ?? 0)).length;
   const headline =
-    g.total > theirs ? `You win by ${g.total - theirs} 🎉` : g.total < theirs ? `Your friend wins by ${theirs - g.total}` : "Dead heat";
+    g.total > theirs
+      ? tr(`You win by ${g.total - theirs} 🎉`, `Tu gagnes de ${g.total - theirs} 🎉`)
+      : g.total < theirs
+        ? tr(`Your friend wins by ${theirs - g.total}`, `Ton ami gagne de ${theirs - g.total}`)
+        : tr("Dead heat", "Égalité parfaite");
   return h(
     "div",
     { class: "duel" },
     h("strong", {}, headline),
-    h("span", { class: "muted" }, `Friend: ${theirs} · ${nouns(g.mode)[1]} won ${won}, lost ${lost}`),
+    h(
+      "span",
+      { class: "muted" },
+      tr(
+        `Friend: ${theirs} · ${nouns(g.mode)[1]} won ${won}, lost ${lost}`,
+        `Ami : ${theirs} · ${upper(nouns(g.mode)[1])} : ${won} pour toi, ${lost} pour ton ami`,
+      ),
+    ),
   );
 }
 
@@ -504,7 +553,7 @@ function withKey(b: HTMLButtonElement): HTMLButtonElement {
 
 function bestLine(best: Record<string, number>, count: number, level: Level): string {
   const b = best[bestFor(count, level)];
-  return b === undefined ? "" : ` · best ${b}`;
+  return b === undefined ? "" : ` · ${tr("best", "record")} ${b}`;
 }
 
 function showPicker(): void {
@@ -516,16 +565,16 @@ function showPicker(): void {
     const saved = loadSaved(m.id, modeOf(m));
     const best = loadBest(m.id, modeOf(m))[String(m.count)];
     const status = choiceOf(m) === "streets"
-      ? `Streets: ${loadFound(m.id).length} found`
+      ? tr(`Streets: ${loadFound(m.id).length} found`, `Rues : ${loadFound(m.id).length} trouvées`)
       : saved
-      ? `In progress: ${saved.placements.length}/${saved.order.length}`
+      ? `${tr("In progress:", "En cours :")} ${saved.placements.length}/${saved.order.length}`
       : best !== undefined
-        ? `Best ${best} / ${m.count * MAX_POINTS}`
+        ? `${tr("Best", "Record")} ${best} / ${m.count * MAX_POINTS}`
         : "";
     const card = button("", () => void pick(m), m === entry ? "map-card current" : "map-card");
     card.append(
       h("strong", {}, m.name),
-      h("span", { class: "muted" }, `${m.count} ${m.noun[1]}${m.cities ? ", or their capitals" : ""}${m.streets ? ", or its streets" : ""}`),
+      h("span", { class: "muted" }, `${m.count} ${m.noun[1]}${m.cities ? tr(", or their capitals", ", ou leurs capitales") : ""}${m.streets ? tr(", or its streets", ", ou ses rues") : ""}`),
       h("span", { class: "muted" }, status),
     );
     return card;
@@ -535,7 +584,14 @@ function showPicker(): void {
       "div",
       { class: "card start" },
       h("h1", {}, "Frontiers"),
-      h("p", { class: "lead" }, "Draw borders or find capitals from memory, on a map that has neither. Pick a map:"),
+      h(
+        "p",
+        { class: "lead" },
+        tr(
+          "Draw borders or find capitals from memory, on a map that has neither. Pick a map:",
+          "Trace les frontières ou trouve les capitales de mémoire, sur une carte qui n'a ni l'un ni l'autre. Choisis une carte :",
+        ),
+      ),
       ...streakLine(),
       h("div", { class: "maps" }, ...cards),
       seedForm(),
@@ -548,17 +604,24 @@ function seedForm(): HTMLElement {
   const input = h("input", {
     type: "text",
     name: "seed",
-    placeholder: "Link or seed, e.g. europe-10-K3F9X",
+    placeholder: tr("Link or seed, e.g. europe-10-K3F9X", "Lien ou graine, ex. europe-10-K3F9X"),
     autocomplete: "off",
     spellcheck: "false",
-    "aria-label": "Seed",
+    "aria-label": tr("Seed", "Graine"),
   }) as HTMLInputElement;
   input.addEventListener("input", () => input.setCustomValidity(""));
   const form = h(
     "form",
     { class: "seed-form" },
-    h("label", { for: "seed-input" }, "Got a link or a seed from a friend? Paste it to play the same game:"),
-    h("div", { class: "seed-row" }, input, h("button", { type: "submit" }, "Play")),
+    h(
+      "label",
+      { for: "seed-input" },
+      tr(
+        "Got a link or a seed from a friend? Paste it to play the same game:",
+        "Un ami t'a envoyé un lien ou une graine ? Colle-le pour jouer la même partie :",
+      ),
+    ),
+    h("div", { class: "seed-row" }, input, h("button", { type: "submit" }, tr("Play", "Jouer"))),
   );
   input.id = "seed-input";
   form.addEventListener("submit", (e) => {
@@ -603,7 +666,7 @@ function showStart(): void {
     h(
       "div",
       { class: "card start" },
-      h("h1", {}, mode === "cities" ? `${m.name} capitals` : m.name),
+      h("h1", {}, gameTitle(m.name, mode)),
       ...modeSwitch(mode),
       h("p", { class: "lead" }, mode === "cities" ? entry.cities!.question : entry.question),
       h("ul", {}, ...rules(m, mode, level).map((rule) => h("li", {}, rule))),
@@ -613,21 +676,21 @@ function showStart(): void {
         { class: "actions" },
         ...(saved
           ? [button(
-                `Resume (${saved.placements.length}/${saved.order.length}${levelOf(saved) === "hard" ? "" : `, ${levelOf(saved)}`})`,
+                `${tr("Resume", "Reprendre")} (${saved.placements.length}/${saved.order.length}${levelOf(saved) === "hard" ? "" : `, ${levelName(levelOf(saved))}`})`,
                 () => resume(m, saved),
                 "primary",
               )]
           : []),
         dailyButton(m, setup(Math.min(n, QUICK_COUNT))),
-        button(`All ${n} ${many}${bestLine(best, n, level)}`, () => start(m, newSeed(setup(n))), saved ? "" : "primary"),
+        button(`${tr("All", "Les")} ${n} ${many}${bestLine(best, n, level)}`, () => start(m, newSeed(setup(n))), saved ? "" : "primary"),
         ...(n > QUICK_FROM
           ? [
-              button(`Quick game: ${QUICK_COUNT}${bestLine(best, QUICK_COUNT, level)}`, () =>
+              button(`${tr("Quick game:", "Partie rapide :")} ${QUICK_COUNT}${bestLine(best, QUICK_COUNT, level)}`, () =>
                 start(m, newSeed(setup(QUICK_COUNT))),
               ),
             ]
           : []),
-        button("← Other maps", showPicker, "link"),
+        button(tr("← Other maps", "← Autres cartes"), showPicker, "link"),
       ),
     ),
   );
@@ -639,17 +702,23 @@ function levelSwitch(level: Level, mode: Mode, one: string): HTMLElement[] {
   const cities = mode === "cities";
   const says: Record<Level, string> = cities
     ? {
-        easy: "After each capital, your pin moves to the real spot.",
-        normal: "Right after each pin, see where the capital really is.",
-        hard: "The real cities only show at the end.",
+        easy: tr("After each capital, your pin moves to the real spot.", "Après chaque capitale, ton épingle file au vrai endroit."),
+        normal: tr("Right after each pin, see where the capital really is.", "Juste après chaque épingle, vois où est vraiment la capitale."),
+        hard: tr("The real cities only show at the end.", "Les vraies villes n'apparaissent qu'à la fin."),
       }
     : {
-        easy: `After each ${one}, the real border takes the place of your drawing: mistakes don't pile up.`,
-        normal: `Right after each ${one}, the real border shows dashed, then goes away.`,
-        hard: "The real borders only show at the end.",
+        easy: tr(
+          `After each ${one}, the real border takes the place of your drawing: mistakes don't pile up.`,
+          `Après chaque ${one}, la vraie frontière remplace ton dessin : les erreurs ne s'accumulent pas.`,
+        ),
+        normal: tr(
+          `Right after each ${one}, the real border shows dashed, then goes away.`,
+          `Juste après chaque ${one}, la vraie frontière s'affiche en pointillés, puis disparaît.`,
+        ),
+        hard: tr("The real borders only show at the end.", "Les vraies frontières n'apparaissent qu'à la fin."),
       };
   const choice = (value: Level) => {
-    const b = button(value[0].toUpperCase() + value.slice(1), () => {
+    const b = button(upper(levelName(value)), () => {
       localStorage.setItem(LEVEL_KEY, value);
       showStart();
     });
@@ -657,7 +726,7 @@ function levelSwitch(level: Level, mode: Mode, one: string): HTMLElement[] {
     return b;
   };
   return [
-    h("div", { class: "modes levels", role: "group", "aria-label": "Level" }, ...LEVELS.map(choice)),
+    h("div", { class: "modes levels", role: "group", "aria-label": tr("Level", "Niveau") }, ...LEVELS.map(choice)),
     h("p", { class: "muted level-says" }, says[level]),
   ];
 }
@@ -677,9 +746,9 @@ function modeSwitch(mode: Choice): HTMLElement[] {
     h(
       "div",
       { class: "modes", role: "group", "aria-label": "Mode" },
-      choice("borders", "Borders"),
-      ...(entry.cities ? [choice("cities", "Capitals")] : []),
-      ...(entry.streets ? [choice("streets", "Streets")] : []),
+      choice("borders", tr("Borders", "Frontières")),
+      ...(entry.cities ? [choice("cities", tr("Capitals", "Capitales"))] : []),
+      ...(entry.streets ? [choice("streets", tr("Streets", "Rues"))] : []),
     ),
   ];
 }
@@ -687,29 +756,43 @@ function modeSwitch(mode: Choice): HTMLElement[] {
 function showStreetsStart(m: GameMap): void {
   const found = loadFound(m.id).length;
   const actions = [
-    button(found ? `Continue (${found} found)` : "Start", () => void playStreets(), "primary"),
+    button(found ? tr(`Continue (${found} found)`, `Continuer (${found} trouvées)`) : tr("Start", "Commencer"), () => void playStreets(), "primary"),
     ...(found
-      ? [button("Start over", () => {
-          if (!confirm(`Forget the ${found} names you found?`)) return;
+      ? [button(tr("Start over", "Recommencer"), () => {
+          if (!confirm(tr(`Forget the ${found} names you found?`, `Oublier les ${found} noms trouvés ?`))) return;
           forgetFound(m.id);
           showStart();
         })]
       : []),
-    button("← Other maps", showPicker, "link"),
+    button(tr("← Other maps", "← Autres cartes"), showPicker, "link"),
   ];
   $("overlay").replaceChildren(
     h(
       "div",
       { class: "card start" },
-      h("h1", {}, `${m.name} streets`),
+      h("h1", {}, streetsTitle(m.name)),
       ...modeSwitch("streets"),
       h("p", { class: "lead" }, entry.streets!.question),
       h(
         "ul",
         {},
-        h("li", {}, "Type the name of a street: every street with that name lights up. “Bercy” finds the rue, the boulevard, the quai, the pont, the port and the allée de Bercy."),
-        h("li", {}, "“Rue de” is optional: “Rivoli” is enough. One wrong letter is forgiven."),
-        h("li", {}, "The counters show the names you found and the share of the street area they cover. There is no end and no timer: your progress stays in this browser, so come back any time."),
+        h(
+          "li",
+          {},
+          tr(
+            "Type the name of a street: every street with that name lights up. “Bercy” finds the rue, the boulevard, the quai, the pont, the port and the allée de Bercy.",
+            "Tape le nom d'une rue : toutes les voies de ce nom s'allument. « Bercy » trouve la rue, le boulevard, le quai, le pont, le port et l'allée de Bercy.",
+          ),
+        ),
+        h("li", {}, tr("“Rue de” is optional: “Rivoli” is enough. One wrong letter is forgiven.", "« Rue de » est facultatif : « Rivoli » suffit. Une lettre fausse est pardonnée.")),
+        h(
+          "li",
+          {},
+          tr(
+            "The counters show the names you found and the share of the street area they cover. There is no end and no timer: your progress stays in this browser, so come back any time.",
+            "Les compteurs montrent les noms trouvés et la part de la surface des rues qu'ils couvrent. Pas de fin, pas de chrono : ta progression reste dans ce navigateur, reviens quand tu veux.",
+          ),
+        ),
       ),
       h("div", { class: "actions" }, ...actions),
     ),
@@ -749,7 +832,7 @@ async function showStreetsLink(target: MapEntry, code: string): Promise<void> {
   if (!ok || entry !== target) return;
   if (!names) {
     showStart();
-    return toast("This progress link is broken: copy it again.");
+    return toast(tr("This progress link is broken: copy it again.", "Ce lien de progression est cassé : copie-le à nouveau."));
   }
   const fresh = streets.newFinds(loadFound(target.id), names);
   const total = new Set(names.map((n) => streets.groupOf(n)).filter(Boolean)).size;
@@ -757,26 +840,30 @@ async function showStreetsLink(target: MapEntry, code: string): Promise<void> {
     h(
       "div",
       { class: "card start" },
-      h("h1", {}, `${target.name} streets`),
+      h("h1", {}, streetsTitle(target.name)),
       h(
         "p",
         { class: "lead" },
-        `This link holds ${total.toLocaleString("en")} street names. `,
+        tr(`This link holds ${num(total)} street names. `, `Ce lien contient ${num(total)} noms de rues. `),
         fresh.length
-          ? h("strong", {}, `${fresh.length.toLocaleString("en")} of them are new to you.`)
-          : "You found all of them already.",
+          ? h("strong", {}, tr(`${num(fresh.length)} of them are new to you.`, `${num(fresh.length)} sont nouveaux pour toi.`))
+          : tr("You found all of them already.", "Tu les as déjà tous trouvés."),
       ),
-      h("p", { class: "muted" }, "Merging adds them to the streets found in this browser. Nothing is removed."),
+      h(
+        "p",
+        { class: "muted" },
+        tr("Merging adds them to the streets found in this browser. Nothing is removed.", "La fusion les ajoute aux rues trouvées dans ce navigateur. Rien n'est retiré."),
+      ),
       h(
         "div",
         { class: "actions" },
         fresh.length
-          ? button(`Add ${fresh.length.toLocaleString("en")} and play`, () => {
+          ? button(tr(`Add ${num(fresh.length)} and play`, `Ajouter ${num(fresh.length)} et jouer`), () => {
               addFound(target.id, fresh);
               void playStreets();
             }, "primary")
-          : button("Play", () => void playStreets(), "primary"),
-        button("Not now", showStart, "link"),
+          : button(tr("Play", "Jouer"), () => void playStreets(), "primary"),
+        button(tr("Not now", "Pas maintenant"), showStart, "link"),
       ),
     ),
   );
@@ -791,20 +878,39 @@ function closeStreets(): void {
 function rules(m: GameMap, mode: Mode, level: Level): string[] {
   const [one, many] = nouns(mode);
   if (mode === "cities") {
-    const tap = touchScreen() ? "Tap" : "Click";
+    const tap = touchScreen() ? tr("Tap", "Touche") : tr("Click", "Clique");
+    const bullseye = formatKm(BULLSEYE_SHARE * m.width * m.kmPerUnit);
     return [
-      `You get ${an(one)}. ${tap} where you think it is to drop a pin; ${tap.toLowerCase()} again to move it. Drag to pan.`,
-      "The map shows coasts but no borders and no cities.",
-      `Score: up to 100 per ${one}. Within ${formatKm(BULLSEYE_SHARE * m.width * m.kmPerUnit)} is a bullseye; points drop off with distance after that.`,
+      tr(
+        `You get ${an(one)}. ${tap} where you think it is to drop a pin; ${tap.toLowerCase()} again to move it. Drag to pan.`,
+        `On te donne ${an(one)}. ${tap} là où tu penses qu'elle est pour poser une épingle ; ${tap.toLowerCase()} encore pour la déplacer. Fais glisser pour te déplacer.`,
+      ),
+      tr("The map shows coasts but no borders and no cities.", "La carte montre les côtes, mais ni frontières ni villes."),
+      tr(
+        `Score: up to 100 per ${one}. Within ${bullseye} is a bullseye; points drop off with distance after that.`,
+        `Score : jusqu'à 100 par ${one}. À moins de ${bullseye}, c'est dans le mille ; au-delà, les points baissent avec la distance.`,
+      ),
     ];
   }
   return [
-    `You get ${an(one)}. Draw its borders on the map by dragging a loop around it.`,
-    "Edges are free: your drawing is cut to the land. Draw more loops to add islands.",
+    tr(
+      `You get ${an(one)}. Draw its borders on the map by dragging a loop around it.`,
+      `On te donne ${an(one)}. Trace ses frontières sur la carte en dessinant une boucle autour.`,
+    ),
+    tr(
+      "Edges are free: your drawing is cut to the land. Draw more loops to add islands.",
+      "Les bords sont offerts : ton dessin est coupé à la terre. Ajoute des boucles pour les îles.",
+    ),
     level === "easy"
-      ? `Land of the ${many} already played is taken, as far as their real borders go.`
-      : `Land you already gave to ${an(one)} is taken. Next ${many} fit around your mistakes.`,
-    `Score: up to 100 per ${one}, for the overlap with the real thing and for being in the right place.`,
+      ? tr(`Land of the ${many} already played is taken, as far as their real borders go.`, "La terre déjà jouée est prise, jusqu'aux vraies frontières.")
+      : tr(
+          `Land you already gave to ${an(one)} is taken. Next ${many} fit around your mistakes.`,
+          `La terre déjà donnée à ${an(one)} est prise : la suite se cale autour de tes erreurs.`,
+        ),
+    tr(
+      `Score: up to 100 per ${one}, for the overlap with the real thing and for being in the right place.`,
+      `Score : jusqu'à 100 par ${one}, pour le recouvrement avec le vrai et pour la bonne position.`,
+    ),
   ];
 }
 
@@ -814,7 +920,9 @@ function dailyButton(m: GameMap, setup: Setup): HTMLButtonElement {
   const seed = dailySeed(setup);
   const played = playedOn(seed);
   const days = streak(Object.keys(loadPlayed()));
-  const label = `Today's ${count}${played === undefined ? (days ? ` · 🔥 ${days}` : "") : ` · you scored ${played}`}`;
+  const label = `${tr(`Today's ${count}`, `Les ${count} du jour`)}${
+    played === undefined ? (days ? ` · 🔥 ${days}` : "") : ` · ${tr("you scored", "ton score")} ${played}`
+  }`;
   return button(label, () => start(m, seed));
 }
 
@@ -824,8 +932,10 @@ function streakLine(): HTMLElement[] {
   if (days === 0) return [];
   const today = dayCode(new Date());
   const done = seeds.some((s) => parseSeed(s)?.code === today);
-  const nudge = done ? ": come back tomorrow" : ": play one of today's games to keep it";
-  return [h("p", { class: "streak" }, `🔥 ${days}-day streak`, h("span", { class: "muted" }, nudge))];
+  const nudge = done
+    ? tr(": come back tomorrow", " : reviens demain")
+    : tr(": play one of today's games to keep it", " : joue une partie du jour pour la garder");
+  return [h("p", { class: "streak" }, tr(`🔥 ${days}-day streak`, `🔥 ${days} jours d'affilée`), h("span", { class: "muted" }, nudge))];
 }
 
 /** Landing screen for a link a friend sent. */
@@ -834,26 +944,36 @@ async function showChallenge({ seed, rival }: Challenge): Promise<void> {
   const cities = seed.mode === "cities";
   const many = cities ? CAPITALS[1] : target.noun[1];
   const played = playedOn(seed);
-  const what = `${target.name}${cities ? " capitals" : ""}, ${seed.count} ${many}${seed.level === "hard" ? "" : `, ${seed.level} mode`}.`;
+  const level = seed.level === "hard" ? "" : `, ${tr(`${seed.level} mode`, `mode ${levelName(seed.level)}`)}`;
+  const what = `${gameTitle(target.name, seed.mode)}, ${seed.count} ${many}${level}.`;
   $("overlay").replaceChildren(
     h(
       "div",
       { class: "card start" },
-      h("h1", {}, rival ? "You've been challenged" : "Frontiers"),
-      h("p", { class: "lead" }, cities ? "Find capitals from memory, on a map that has none." : "Draw borders from memory, on a map that has none."),
+      h("h1", {}, rival ? tr("You've been challenged", "On te lance un défi") : "Frontiers"),
+      h(
+        "p",
+        { class: "lead" },
+        cities
+          ? tr("Find capitals from memory, on a map that has none.", "Trouve les capitales de mémoire, sur une carte qui n'en a aucune.")
+          : tr("Draw borders from memory, on a map that has none.", "Trace les frontières de mémoire, sur une carte qui n'en a aucune."),
+      ),
       h(
         "p",
         {},
         rival
-          ? `${what} Your friend scored ${sum(rival)} / ${seed.count * MAX_POINTS}. Same ${many}, same order: can you beat them?`
-          : `A friend sent you a game: ${what} Same ${many}, same order.`,
+          ? tr(
+              `${what} Your friend scored ${sum(rival)} / ${seed.count * MAX_POINTS}. Same ${many}, same order: can you beat them?`,
+              `${what} Ton ami a fait ${sum(rival)} / ${seed.count * MAX_POINTS}. Mêmes ${many}, même ordre : feras-tu mieux ?`,
+            )
+          : tr(`A friend sent you a game: ${what} Same ${many}, same order.`, `Un ami t'envoie une partie : ${what} Mêmes ${many}, même ordre.`),
       ),
-      ...(played === undefined ? [] : [h("p", { class: "muted" }, `You already played it: ${played}.`)]),
+      ...(played === undefined ? [] : [h("p", { class: "muted" }, tr(`You already played it: ${played}.`, `Tu l'as déjà jouée : ${played}.`))]),
       h(
         "div",
         { class: "actions" },
-        button(rival ? "Accept the challenge" : "Play", () => void playSeed({ seed, rival }), "primary"),
-        button("See all maps", showPicker, "link"),
+        button(rival ? tr("Accept the challenge", "Relever le défi") : tr("Play", "Jouer"), () => void playSeed({ seed, rival }), "primary"),
+        button(tr("See all maps", "Voir toutes les cartes"), showPicker, "link"),
       ),
     ),
   );
@@ -906,18 +1026,18 @@ function render(): void {
   }
 
   const done = g.placements.length;
-  $("map-name").textContent = g.level === "hard" ? g.title : `${g.title} · ${g.level} mode`;
+  $("map-name").textContent = g.level === "hard" ? g.title : `${g.title} · ${tr(`${g.level} mode`, `mode ${levelName(g.level)}`)}`;
   $("progress").textContent = `${Math.min(done + (g.phase === "drawing" ? 1 : 0), g.order.length)} / ${g.order.length}`;
   $("total").textContent = `${g.total} pts`;
   const seedButton = $("seed");
   seedButton.hidden = !g.seed;
-  seedButton.replaceChildren("Invite ", h("code", {}, g.seed ?? ""));
+  seedButton.replaceChildren(tr("Invite ", "Inviter "), h("code", {}, g.seed ?? ""));
   const prompt = $("prompt");
   if (g.phase === "drawing" && cities) {
     prompt.replaceChildren("Place ", h("strong", {}, g.target(g.current!.id)), h("span", { class: "muted" }, `, ${g.current!.name}`));
-  } else if (g.phase === "drawing") prompt.replaceChildren("Draw ", h("strong", {}, g.current!.name));
+  } else if (g.phase === "drawing") prompt.replaceChildren(tr("Draw ", "Trace "), h("strong", {}, g.current!.name));
   else if (g.phase === "reveal") prompt.replaceChildren(h("strong", {}, g.target(last!.regionId)));
-  else prompt.replaceChildren(h("strong", {}, shown ? "Replay" : "Finished"));
+  else prompt.replaceChildren(h("strong", {}, shown ? tr("Replay", "Revoir") : tr("Finished", "Terminé")));
 
   $("tools").hidden = g.phase !== "drawing";
   for (const id of ["undo", "clear", "eraser"]) $(id).hidden = cities;
@@ -931,7 +1051,7 @@ function render(): void {
   else if (g.phase === "reveal" && last) {
     result.replaceChildren(
       resultCard(g, last),
-      withKey(button(g.current ? `Next ${nouns(g.mode)[0]}` : "See the results", next, "primary")),
+      withKey(button(g.current ? nextOne(nouns(g.mode)[0]) : tr("See the results", "Voir les résultats"), next, "primary")),
     );
   }
   if (g.phase === "over") {
@@ -942,18 +1062,59 @@ function render(): void {
   }
 }
 
-const HINTS = {
-  borders: {
-    mouse: "Drag to draw · Shift-drag to erase · Scroll to zoom · Space-drag or right-drag to pan",
-    touch: "Draw with one finger · Pinch to zoom · Two fingers to pan",
+const HINTS = tr(
+  {
+    borders: {
+      mouse: "Drag to draw · Shift-drag to erase · Scroll to zoom · Space-drag or right-drag to pan",
+      touch: "Draw with one finger · Pinch to zoom · Two fingers to pan",
+    },
+    cities: { mouse: "Click to drop a pin · Drag to pan · Scroll to zoom", touch: "Tap to drop a pin · Drag to pan · Pinch to zoom" },
   },
-  cities: { mouse: "Click to drop a pin · Drag to pan · Scroll to zoom", touch: "Tap to drop a pin · Drag to pan · Pinch to zoom" },
-};
+  {
+    borders: {
+      mouse: "Glisse pour tracer · Maj-glisser pour gommer · Molette pour zoomer · Espace-glisser ou clic droit pour te déplacer",
+      touch: "Trace avec un doigt · Pince pour zoomer · Deux doigts pour te déplacer",
+    },
+    cities: {
+      mouse: "Clique pour poser une épingle · Glisse pour te déplacer · Molette pour zoomer",
+      touch: "Touche pour poser une épingle · Glisse pour te déplacer · Pince pour zoomer",
+    },
+  },
+);
 
 function setHints(cities: boolean): void {
   const hints = HINTS[cities ? "cities" : "borders"];
   $("hint-mouse").textContent = hints.mouse;
   $("hint-touch").textContent = hints.touch;
+}
+
+/** index.html is written in English; in French, its texts are swapped here. */
+function translatePage(): void {
+  document.documentElement.lang = lang;
+  const flag = $("lang");
+  flag.textContent = tr("🇫🇷", "🇬🇧");
+  flag.title = tr("Passer en français", "Switch to English");
+  flag.setAttribute("aria-label", flag.title);
+  if (lang !== "fr") return;
+  const texts: [id: string, text: string | null, title: string | null][] = [
+    ["menu", null, "Retour aux cartes (ta partie est sauvegardée)"],
+    ["seed", null, "Copier un lien vers cette partie : tes amis qui l'ouvrent ont le même ordre"],
+    ["undo", "Annuler", "Annuler la dernière boucle (Ctrl+Z)"],
+    ["clear", "Effacer", "Effacer le dessin (Échap)"],
+    ["eraser", "Gomme", "Gommer avec tes boucles au lieu de dessiner (E, ou Maj enfoncée)"],
+    ["skip", "Passer", "Abandonner celui-ci : 0 point"],
+    ["submit", "Valider", "Valider (Entrée)"],
+    ["results-button", "Résultats", null],
+  ];
+  for (const [id, text, title] of texts) {
+    const el = $(id);
+    // Keep the children after the text, such as the ⏎ key on Submit.
+    if (text !== null) el.firstChild!.textContent = text;
+    if (title !== null) el.title = title;
+  }
+  for (const [id, label] of [["zoom-in", "Zoomer"], ["zoom-out", "Dézoomer"], ["zoom-reset", "Réinitialiser le zoom"]]) {
+    $(id).setAttribute("aria-label", label);
+  }
 }
 
 $("undo").addEventListener("click", () => {
@@ -974,6 +1135,8 @@ $("zoom-out").addEventListener("click", () => view?.zoomBy(1 / 1.6));
 $("zoom-reset").addEventListener("click", () => view?.resetZoom());
 $("results-button").addEventListener("click", closeReplay);
 $("sound").addEventListener("click", () => setSound(isMuted()));
+$("lang").addEventListener("click", () => setLang(tr("fr", "en")));
+translatePage();
 setSound(!isMuted());
 
 window.addEventListener("keydown", (e) => {
@@ -1012,7 +1175,12 @@ const streetsTarget = MAPS.find((m) => m.id === streetsMap && m.streets);
 history.replaceState(null, "", location.pathname);
 if (linked && !seedProblem(linked.seed)) void showChallenge(linked);
 else if (streetsTarget && streetsCode) void showStreetsLink(streetsTarget, streetsCode);
-else {
+else if (sessionStorage.getItem(SWITCHED_KEY)) {
+  // Back from a language switch: reopen the map that was on screen, where a game in progress can resume.
+  sessionStorage.removeItem(SWITCHED_KEY);
+  showPicker();
+  void pick(entry);
+} else {
   showPicker();
   void useMap(entry);
 }

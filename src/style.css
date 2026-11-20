@@ -947,3 +947,11 @@ button {
     display: none;
   }
 }
+
+/* Above the overlay, so the language can change on every screen. */
+.zoom .lang {
+  position: relative;
+  z-index: 6;
+  font-size: 1.1rem;
+  line-height: 1;
+}

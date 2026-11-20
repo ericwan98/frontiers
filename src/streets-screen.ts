@@ -2,6 +2,7 @@ import { formatKm } from "./awards.ts";
 import { confetti } from "./confetti.ts";
 import { button, h } from "./dom.ts";
 import type { GameMap } from "./game.ts";
+import { num, percent as pct, tr } from "./i18n.ts";
 import { fanfare } from "./sound.ts";
 import { packNames, type StreetGroup, type Streets } from "./streets.ts";
 import type { FoundStreet, MapView } from "./view.ts";
@@ -12,7 +13,9 @@ const AREA_MILESTONES = [0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 
 const NAME_MILESTONES = [100, 250, 500, 1000, 2000, 3000, 4000, 5000];
 /** A timelapse shows finds in the order they were saved: this long per find, within these bounds. */
 const TIMELAPSE_MS = { each: 30, min: 4000, max: 25000 };
-const REPLAY = "Replay your finds";
+const REPLAY = tr("Replay your finds", "Revoir tes trouvailles");
+
+export const streetsTitle = (mapName: string) => tr(`${mapName} streets`, `Rues de ${mapName}`);
 
 const foundKey = (mapId: string) => `frontiers:${mapId}-streets:found`;
 
@@ -39,12 +42,12 @@ export function forgetFound(mapId: string): void {
 }
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-const percent = (share: number) => (share > 0 && share < 0.0001 ? "<0.01%" : `${(share * 100).toFixed(share < 0.1 ? 2 : 1)}%`);
-const count = (n: number) => n.toLocaleString("en");
+const percent = (share: number) => (share > 0 && share < 0.0001 ? `<${pct(0.0001, 2)}` : pct(share, share < 0.1 ? 2 : 1));
+const count = (n: number) => num(n);
 
 function voieList(g: StreetGroup): string {
   const names = g.voies.map((v) => v.n);
-  return names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+  return names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} ${tr("and", "et")} ${names.length - 3} ${tr("more", "autres")}`;
 }
 
 const longestOrigin = (g: StreetGroup) => g.voies.reduce((best, v) => ((v.o ?? "").length > best.length ? v.o! : best), "");
@@ -80,14 +83,14 @@ export class StreetsScreen {
 
     this.input = h("input", {
       type: "text",
-      placeholder: "Name a street, e.g. Rivoli",
+      placeholder: tr("Name a street, e.g. Rivoli", "Nomme une rue, ex. Rivoli"),
       autocomplete: "off",
       autocapitalize: "off",
       spellcheck: "false",
       enterkeyhint: "go",
-      "aria-label": "Street name",
+      "aria-label": tr("Street name", "Nom de rue"),
     }) as HTMLInputElement;
-    const form = h("form", { class: "street-form" }, this.input, h("button", { type: "submit", class: "primary" }, "Find"));
+    const form = h("form", { class: "street-form" }, this.input, h("button", { type: "submit", class: "primary" }, tr("Find", "Trouver")));
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       this.answer(this.input.value);
@@ -101,7 +104,7 @@ export class StreetsScreen {
     this.recent = h("ul", { class: "street-recent" });
     this.byArrondissement = h("div", { class: "street-arrondissements" });
     // On a phone the panel starts folded to the input and a short count, to leave the map room.
-    this.more = button("More", () => this.unfold(!this.panel.classList.contains("unfolded")), "link street-more");
+    this.more = button(tr("More", "Plus"), () => this.unfold(!this.panel.classList.contains("unfolded")), "link street-more");
     this.more.setAttribute("aria-expanded", "false");
     this.replay = button(REPLAY, () => this.timelapse(), "link");
     this.panel = h(
@@ -111,20 +114,20 @@ export class StreetsScreen {
         "div",
         { class: "street-top" },
         button(`← ${map.name}`, onBack, "link"),
-        h("strong", {}, `${map.name} streets`),
+        h("strong", {}, streetsTitle(map.name)),
         this.more,
       ),
       form,
       this.message,
       this.stats,
       h("div", { class: "street-bar" }, this.bar),
-      h("details", {}, h("summary", {}, "Latest finds"), this.recent),
-      h("details", {}, h("summary", {}, "By arrondissement"), this.byArrondissement),
+      h("details", {}, h("summary", {}, tr("Latest finds", "Dernières trouvailles")), this.recent),
+      h("details", {}, h("summary", {}, tr("By arrondissement", "Par arrondissement")), this.byArrondissement),
       h(
         "p",
         { class: "street-actions" },
         this.replay,
-        button("Copy a link to merge your finds", () => void this.share(), "link"),
+        button(tr("Copy a link to merge your finds", "Copier un lien pour fusionner tes trouvailles"), () => void this.share(), "link"),
       ),
     );
     stage.append(this.panel);
@@ -155,16 +158,19 @@ export class StreetsScreen {
   private answer(text: string): void {
     this.endTimelapse();
     const answer = this.streets.match(text);
-    if (answer.kind === "unknown") return this.say(text.trim() ? `No street of ${this.map.name} is called “${text.trim()}”.` : "");
+    const asked = text.trim();
+    if (answer.kind === "unknown") {
+      return this.say(asked ? tr(`No street of ${this.map.name} is called “${asked}”.`, `Aucune rue de ${this.map.name} ne s'appelle « ${asked} ».`) : "");
+    }
     if (answer.kind === "ambiguous") {
-      return this.say(`Several names are one letter away from “${text.trim()}”: check the spelling.`);
+      return this.say(tr(`Several names are one letter away from “${asked}”: check the spelling.`, `Plusieurs noms sont à une lettre de « ${asked} » : vérifie l'orthographe.`));
     }
     const fresh = answer.groups.filter((g) => !this.found.includes(g));
     this.input.value = "";
     if (fresh.length === 0) {
       this.latest = answer.groups[0];
       this.update();
-      return this.say(`Already found: ${answer.groups.map((g) => voieList(g)).join("; ")}.`);
+      return this.say(`${tr("Already found:", "Déjà trouvé :")} ${answer.groups.map((g) => voieList(g)).join("; ")}.`);
     }
     const before = this.streets.progress(this.found);
     this.found.push(...fresh);
@@ -174,7 +180,7 @@ export class StreetsScreen {
     this.update();
     const share = fresh.reduce((s, g) => s + g.m2, 0) / this.streets.totalM2;
     const metres = fresh.reduce((s, g) => s + g.metres, 0);
-    this.describe(fresh, ` +${percent(share)} · ${formatKm(metres / 1000)}${answer.typo ? " (one letter off, forgiven)" : ""}`);
+    this.describe(fresh, ` +${percent(share)} · ${formatKm(metres / 1000)}${answer.typo ? tr(" (one letter off, forgiven)", " (une lettre fausse, pardonnée)") : ""}`);
     this.celebrate(before.m2 / this.streets.totalM2, before.names);
   }
 
@@ -206,8 +212,8 @@ export class StreetsScreen {
     const area = passed(AREA_MILESTONES, shareBefore, p.m2 / this.streets.totalM2);
     const names = passed(NAME_MILESTONES, namesBefore, p.names);
     const text = area
-      ? `${Math.round(area * 100)}% of the street area of ${this.map.name}!`
-      : names && `${count(names)} names of ${this.map.name} streets!`;
+      ? tr(`${pct(area)} of the street area of ${this.map.name}!`, `${pct(area)} de la surface des rues de ${this.map.name} !`)
+      : names && tr(`${count(names)} names of ${this.map.name} streets!`, `${count(names)} noms de rues de ${this.map.name} !`);
     if (!text) return;
     this.message.prepend(h("strong", { class: "street-milestone" }, `🎉 ${text}`));
     fanfare();
@@ -220,10 +226,13 @@ export class StreetsScreen {
     const code = await packNames(this.streets.data.order, (name) => found.has(this.streets.groupOf(name)!));
     const url = new URL(location.pathname, location.origin);
     url.searchParams.set(STREETS_PARAM, `${this.map.id}.${code}`);
-    const what = `Open it in another browser, or send it to a friend: your ${count(this.found.length)} names are added to theirs.`;
+    const what = tr(
+      `Open it in another browser, or send it to a friend: your ${count(this.found.length)} names are added to theirs.`,
+      `Ouvre-le dans un autre navigateur, ou envoie-le à un ami : tes ${count(this.found.length)} noms s'ajoutent aux siens.`,
+    );
     try {
       await navigator.clipboard.writeText(url.toString());
-      this.say(`Link copied. ${what}`);
+      this.say(`${tr("Link copied.", "Lien copié.")} ${what}`);
     } catch {
       this.message.replaceChildren(`${what} `, h("input", { class: "street-link", readonly: "", value: url.toString() }));
     }
@@ -236,15 +245,15 @@ export class StreetsScreen {
       return this.say("");
     }
     const all = [...this.found];
-    if (all.length === 0) return this.say("Find a street first.");
+    if (all.length === 0) return this.say(tr("Find a street first.", "Trouve d'abord une rue."));
     const duration = Math.min(TIMELAPSE_MS.max, Math.max(TIMELAPSE_MS.min, all.length * TIMELAPSE_MS.each));
     this.view.resetZoom();
-    this.replay.textContent = "Stop the replay";
+    this.replay.textContent = tr("Stop the replay", "Arrêter");
     const start = performance.now();
     const step = (now: number) => {
       const n = Math.min(all.length, Math.max(1, Math.ceil(((now - start) / duration) * all.length)));
       this.update(all.slice(0, n), all[n - 1]);
-      this.say(`Replay: ${count(n)} / ${count(all.length)} names`);
+      this.say(`${tr("Replay:", "Revoir :")} ${count(n)} / ${count(all.length)} ${tr("names", "noms")}`);
       this.timelapseFrame = n < all.length ? requestAnimationFrame(step) : 0;
       if (!this.timelapseFrame) this.replay.textContent = REPLAY;
     };
@@ -261,7 +270,7 @@ export class StreetsScreen {
 
   private unfold(on: boolean): void {
     this.panel.classList.toggle("unfolded", on);
-    this.more.textContent = on ? "Less" : "More";
+    this.more.textContent = on ? tr("Less", "Moins") : tr("More", "Plus");
     this.more.setAttribute("aria-expanded", String(on));
   }
 
@@ -282,12 +291,12 @@ export class StreetsScreen {
     this.stats.replaceChildren(
       h("strong", {}, count(p.names)),
       h("span", { class: "street-long" }, ` / ${count(this.streets.groups.length)}`),
-      " names · ",
+      tr(" names · ", " noms · "),
       h("strong", {}, percent(share)),
-      h("span", { class: "street-long" }, " of the street area"),
+      h("span", { class: "street-long" }, tr(" of the street area", " de la surface des rues")),
       " · ",
       h("strong", {}, formatKm(p.metres / 1000)),
-      h("span", { class: "street-long" }, ` of ${formatKm(this.streets.totalMetres / 1000)}`),
+      h("span", { class: "street-long" }, ` ${tr("of", "sur")} ${formatKm(this.streets.totalMetres / 1000)}`),
       h("span", { class: "muted street-long" }, ` · ${count(p.voies)} / ${count(this.streets.data.voies.length)} voies`),
     );
     this.bar.style.width = `${Math.min(100, share * 100)}%`;
@@ -301,7 +310,7 @@ export class StreetsScreen {
           return h("li", {}, b);
         }),
     );
-    if (found.length === 0) this.recent.replaceChildren(h("li", { class: "muted" }, "Nothing yet."));
+    if (found.length === 0) this.recent.replaceChildren(h("li", { class: "muted" }, tr("Nothing yet.", "Rien pour l'instant.")));
     this.byArrondissement.replaceChildren(
       ...p.arrondissements.map((s, i) =>
         h(
