@@ -1,5 +1,6 @@
 import type { GameMap } from "../game.ts";
 import { lang, tr } from "../i18n.ts";
+import type { ProjectionSpec } from "../satellite.ts";
 import type { StreetsData } from "../streets.ts";
 
 export interface MapEntry {
@@ -14,13 +15,17 @@ export interface MapEntry {
   cities?: { question: string };
   /** Set on maps that also have a name-the-streets mode. */
   streets?: { question: string; load: () => Promise<StreetsData> };
-  /** URL of the map's satellite image, from `npm run satellite`; fetched only when the player turns it on. */
-  satellite?: string;
+  /**
+   * The map's satellite image and projection, from `npm run satellite`; fetched only when the player turns it on.
+   * The projection places sharper tiles over the image when zoomed in.
+   */
+  satellite?: { image: string; projection: () => Promise<ProjectionSpec> };
   load: () => Promise<GameMap>;
 }
 
 // JSON imports type their coordinates as number[][], looser than MultiPolygon.
 const asMap = (module: { default: unknown }) => module.default as GameMap;
+const asSpec = (module: { default: unknown }) => module.default as ProjectionSpec;
 
 type FrNames = Record<string, Record<string, { name: string; capital?: string }>>;
 
@@ -48,7 +53,10 @@ export const MAPS: MapEntry[] = [
     noun: tr(["country", "countries"], ["pays", "pays"]),
     question: tr("How well do you know the world map?", "Connais-tu bien la carte du monde ?"),
     cities: { question: tr("Can you find the world's capitals?", "Sauras-tu placer les capitales du monde ?") },
-    satellite: new URL("./satellite/world.webp", import.meta.url).href,
+    satellite: {
+      image: new URL("./satellite/world.webp", import.meta.url).href,
+      projection: () => import("./satellite/world.json").then(asSpec),
+    },
     load: () => import("./world.json").then(asMap).then(localized),
   },
   {
@@ -58,7 +66,10 @@ export const MAPS: MapEntry[] = [
     noun: tr(["country", "countries"], ["pays", "pays"]),
     question: tr("How well do you know the borders of Europe?", "Connais-tu bien les frontières de l'Europe ?"),
     cities: { question: tr("Can you find the capitals of Europe?", "Sauras-tu placer les capitales de l'Europe ?") },
-    satellite: new URL("./satellite/europe.webp", import.meta.url).href,
+    satellite: {
+      image: new URL("./satellite/europe.webp", import.meta.url).href,
+      projection: () => import("./satellite/europe.json").then(asSpec),
+    },
     load: () => import("./europe.json").then(asMap).then(localized),
   },
   {
@@ -68,7 +79,10 @@ export const MAPS: MapEntry[] = [
     noun: tr(["country", "countries"], ["pays", "pays"]),
     question: tr("How well do you know the borders of Africa?", "Connais-tu bien les frontières de l'Afrique ?"),
     cities: { question: tr("Can you find the capitals of Africa?", "Sauras-tu placer les capitales de l'Afrique ?") },
-    satellite: new URL("./satellite/africa.webp", import.meta.url).href,
+    satellite: {
+      image: new URL("./satellite/africa.webp", import.meta.url).href,
+      projection: () => import("./satellite/africa.json").then(asSpec),
+    },
     load: () => import("./africa.json").then(asMap).then(localized),
   },
   {
@@ -78,7 +92,10 @@ export const MAPS: MapEntry[] = [
     noun: tr(["country", "countries"], ["pays", "pays"]),
     question: tr("How well do you know the borders of South America?", "Connais-tu bien les frontières de l'Amérique du Sud ?"),
     cities: { question: tr("Can you find the capitals of South America?", "Sauras-tu placer les capitales de l'Amérique du Sud ?") },
-    satellite: new URL("./satellite/south-america.webp", import.meta.url).href,
+    satellite: {
+      image: new URL("./satellite/south-america.webp", import.meta.url).href,
+      projection: () => import("./satellite/south-america.json").then(asSpec),
+    },
     load: () => import("./south-america.json").then(asMap).then(localized),
   },
   {
@@ -87,7 +104,10 @@ export const MAPS: MapEntry[] = [
     count: 48,
     noun: tr(["state", "states"], ["État", "États"]),
     question: tr("How well do you know the US states?", "Connais-tu bien les États américains ?"),
-    satellite: new URL("./satellite/us.webp", import.meta.url).href,
+    satellite: {
+      image: new URL("./satellite/us.webp", import.meta.url).href,
+      projection: () => import("./satellite/us.json").then(asSpec),
+    },
     load: () => import("./us.json").then(asMap).then(localized),
   },
   {
@@ -96,7 +116,10 @@ export const MAPS: MapEntry[] = [
     count: 13,
     noun: tr(["region", "regions"], ["région", "régions"]),
     question: tr("How well do you know the regions of France?", "Connais-tu bien les régions de France ?"),
-    satellite: new URL("./satellite/france.webp", import.meta.url).href,
+    satellite: {
+      image: new URL("./satellite/france.webp", import.meta.url).href,
+      projection: () => import("./satellite/france.json").then(asSpec),
+    },
     load: () => import("./france.json").then(asMap).then(localized),
   },
   {

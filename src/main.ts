@@ -313,7 +313,15 @@ function showSatellite(): void {
   const b = $("satellite");
   b.hidden = !entry.satellite;
   b.setAttribute("aria-pressed", String(on));
-  view?.setSatellite(on ? entry.satellite : undefined);
+  const satellite = on ? entry.satellite : undefined;
+  $("satellite-credit").hidden = !satellite;
+  view?.setSatellite(satellite?.image);
+  if (!satellite || !view) return;
+  // The tile code and projection come after the image, which shows at once.
+  const shown = view;
+  void Promise.all([import("./satellite.ts"), satellite.projection()]).then(([module, spec]) => {
+    if (view === shown && localStorage.getItem(SATELLITE_KEY) === "1") shown.setSatelliteTiles(module.tiler(spec));
+  });
 }
 
 function setEraser(on: boolean): void {
@@ -1113,6 +1121,14 @@ function translatePage(): void {
   flag.textContent = tr("🇫🇷", "🇬🇧");
   flag.title = tr("Passer en français", "Switch to English");
   flag.setAttribute("aria-label", flag.title);
+  // The wording EOX asks for, under its CC BY-NC-SA 4.0 licence.
+  $("satellite-credit").replaceChildren(
+    h("a", { href: "https://s2maps.eu", target: "_blank", rel: "noopener" }, "Sentinel-2 cloudless 2025"),
+    tr(
+      " by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2025) · NASA Blue Marble",
+      " par EOX IT Services GmbH (contient des données Copernicus Sentinel 2025 modifiées) · NASA Blue Marble",
+    ),
+  );
   if (lang !== "fr") return;
   const texts: [id: string, text: string | null, title: string | null][] = [
     ["menu", null, "Retour aux cartes (ta partie est sauvegardée)"],

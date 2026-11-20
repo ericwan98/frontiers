@@ -1,5 +1,6 @@
 import type { GameMap, Stroke } from "./game.ts";
 import { area, bbox, labelPoint, simplify, toPath, type Box, type MultiPolygon, type Pair, type Ring } from "./geometry.ts";
+import type { Tiler } from "./satellite.ts";
 
 const SVG = "http://www.w3.org/2000/svg";
 const MAX_ZOOM = 16;
@@ -13,6 +14,10 @@ const STREET_REACH_PX = [0, 3, 6, 9, 12];
 const STREET_STEP_PX = 3;
 /** A map pin, drawn in screen pixels with its tip at the origin. */
 const PIN_PATH = "M0 0C-2-6-9-10-9-17A9 9 0 1 1 9-17C9-10 2-6 0 0Z";
+/** Milliseconds the view must stay still before sharper satellite tiles are fetched for it. */
+const TILE_DELAY_MS = 150;
+/** Pixels across a satellite tile. */
+const TILE_PX = 256;
 
 // Mirrors the map rules in style.css, in map units, which an exported image has no other way to know.
 const EXPORT_CSS = `
@@ -98,6 +103,8 @@ export class MapView {
   private readonly touches = new Map<number, Pair>();
   private pinch: { distance: number; mid: Pair } | null = null;
   private readonly listeners = new AbortController();
+  /** Sharp satellite tiles over the base image, by key; `generation` drops answers for views already left. */
+  private tiles: { tiler: Tiler; layer: SVGGElement; shown: Map<string, SVGGElement>; timer?: number; generation: number } | null = null;
   drawingEnabled = true;
   /** Every stroke erases, for screens without a Shift key. */
   eraseMode = false;
@@ -254,6 +261,7 @@ export class MapView {
 
   /** Removes the map and its window listeners. */
   destroy(): void {
+    this.setSatelliteTiles();
     this.listeners.abort();
     this.svg.remove();
   }
@@ -265,7 +273,7 @@ export class MapView {
   snapshot(): SVGSVGElement {
     const copy = this.svg.cloneNode(true) as SVGSVGElement;
     // Exports keep the plain map: an SVG drawn as an image can't load the satellite picture.
-    copy.querySelectorAll(".draft, .live, .satellite").forEach((n) => n.remove());
+    copy.querySelectorAll(".draft, .live, .satellite, .satellite-tiles").forEach((n) => n.remove());
     copy.classList.remove("satellite");
     copy.setAttribute("xmlns", SVG);
     copy.setAttribute("viewBox", `0 0 ${this.map.width} ${this.map.height}`);
@@ -283,9 +291,88 @@ export class MapView {
   setSatellite(url?: string): void {
     this.svg.querySelector("image.satellite")?.remove();
     this.svg.classList.toggle("satellite", Boolean(url));
-    if (!url) return;
+    if (!url) return this.setSatelliteTiles();
     const image = el("image", { class: "satellite", href: url, width: this.map.width, height: this.map.height, preserveAspectRatio: "none" });
     this.svg.querySelector(".sea")!.after(image);
+  }
+
+  /** Lays sharper tiles from `tiler` over the satellite image wherever the view is zoomed past its detail; none turns them off. */
+  setSatelliteTiles(tiler?: Tiler): void {
+    if (this.tiles) {
+      clearTimeout(this.tiles.timer);
+      this.tiles.layer.remove();
+      this.tiles = null;
+    }
+    const base = this.svg.querySelector("image.satellite");
+    if (!tiler || !base) return;
+    // Tiles stop at the frame and, on the world map, at the globe's outline, like the base image.
+    const frameClip = el("clipPath", { id: "satellite-frame" });
+    frameClip.append(el("rect", { width: this.map.width, height: this.map.height }));
+    const globeClip = el("clipPath", { id: "satellite-globe" });
+    globeClip.append(el("path", { d: tiler.globe }));
+    const inner = el("g", { "clip-path": "url(#satellite-globe)" });
+    const layer = el("g", { class: "satellite-tiles", "clip-path": "url(#satellite-frame)" });
+    layer.append(frameClip, globeClip, inner);
+    base.after(layer);
+    this.tiles = { tiler, layer, shown: new Map(), generation: 0 };
+    this.updateTiles();
+  }
+
+  /** Fetches the tiles the view needs; old ones stay until every new one has arrived, so nothing blinks. */
+  private updateTiles(): void {
+    const tiles = this.tiles;
+    if (!tiles) return;
+    const { width, height } = this.svg.getBoundingClientRect();
+    if (!width || !height) return;
+    // What "meet" shows: the view box grown on one side to the screen's shape.
+    const px = Math.max(this.view.w / width, this.view.h / height);
+    const cx = this.view.x + this.view.w / 2;
+    const cy = this.view.y + this.view.h / 2;
+    const box: Box = [
+      Math.max(0, cx - (width * px) / 2),
+      Math.max(0, cy - (height * px) / 2),
+      Math.min(this.map.width, cx + (width * px) / 2),
+      Math.min(this.map.height, cy + (height * px) / 2),
+    ];
+    const wanted = tiles.tiler.tiles(box, devicePixelRatio / px);
+    const generation = ++tiles.generation;
+    const inner = tiles.layer.lastElementChild!;
+    const keep = new Set(wanted.map((t) => t.key));
+    const done = () => {
+      if (this.tiles !== tiles || generation !== tiles.generation) return;
+      for (const [key, tile] of tiles.shown) {
+        if (keep.has(key)) continue;
+        tile.remove();
+        tiles.shown.delete(key);
+      }
+    };
+    let pending = 0;
+    for (const t of wanted) {
+      if (tiles.shown.has(t.key)) continue;
+      const tile = el("g");
+      // Each piece crops its part of the one image the tile loads, and bends it to its place.
+      const size = TILE_PX / t.split;
+      t.pieces.forEach((transform, i) => {
+        const piece = el("g", { transform });
+        const crop = el("svg", { width: 1, height: 1, viewBox: `${(i % t.split) * size} ${Math.floor(i / t.split) * size} ${size} ${size}`, preserveAspectRatio: "none" });
+        crop.append(el("image", { href: t.href, width: TILE_PX, height: TILE_PX }));
+        piece.append(crop);
+        tile.append(piece);
+      });
+      const image = tile.querySelector("image")!;
+      pending++;
+      const settle = () => --pending === 0 && done();
+      image.addEventListener("load", settle, { once: true });
+      // A tile that fails leaves the base image showing there, and is asked for again on the next move.
+      image.addEventListener("error", () => {
+        tile.remove();
+        if (tiles.shown.get(t.key) === tile) tiles.shown.delete(t.key);
+        settle();
+      }, { once: true });
+      inner.append(tile);
+      tiles.shown.set(t.key, tile);
+    }
+    if (pending === 0) done();
   }
 
   resetZoom(): void {
@@ -344,6 +431,10 @@ export class MapView {
     const { width, height } = this.svg.getBoundingClientRect();
     // preserveAspectRatio "meet" fits the tighter of the two dimensions.
     if (width && height) this.svg.style.setProperty("--px", String(Math.max(w / width, h / height)));
+    if (this.tiles) {
+      clearTimeout(this.tiles.timer);
+      this.tiles.timer = window.setTimeout(() => this.updateTiles(), TILE_DELAY_MS);
+    }
   }
 
   private toMap(e: { clientX: number; clientY: number }): Pair {

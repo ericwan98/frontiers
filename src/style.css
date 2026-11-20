@@ -991,3 +991,17 @@ button {
   background: #ffe9df;
   border-color: var(--accent);
 }
+
+/* EOX's licence asks for the credit on the map itself while its tiles can show. */
+.satellite-credit {
+  position: absolute;
+  left: 0.5rem;
+  top: 0.5rem;
+  max-width: min(26rem, 60%);
+  margin: 0;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.65rem;
+  color: var(--muted);
+  background: rgb(255 253 248 / 0.8);
+  border-radius: 6px;
+}

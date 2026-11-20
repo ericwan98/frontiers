@@ -98,8 +98,12 @@ npm run check      # typecheck + tests + build
   domain) under every map but Paris, whose streets would give the borders away. `npm run satellite`
   re-runs those builders with `--satellite`: `scripts/satellite.mjs` reprojects the imagery with
   each map's own projection to `src/maps/satellite/<id>.webp` (2.4 pixels a map unit), downloading
-  the sources to `.cache/` once. It is display only: scores and records are shared with the plain
-  map, and shared images show the plain map.
+  the sources to `.cache/` once, and writes the projection to `<id>.json`. Zoomed in past that
+  image's detail, `src/satellite.ts` lays [Sentinel-2 cloudless 2025](https://s2maps.eu) tiles by
+  EOX (10 m a pixel, CC BY-NC-SA 4.0, credit shown on the map) over the visible part only, cut into
+  pieces small enough for one affine transform each to stay within half a screen pixel of the
+  projection (`test/satellite.test.ts`). If EOX is down, the NASA image stays. It is display only:
+  scores and records are shared with the plain map, and shared images show the plain map.
 - A map is just `{ width, height, kmPerUnit, land, context, water?, regions }`, so another variant is
   another build script, JSON file and entry in `src/maps/index.ts`.
 - There is no backend: `dist/` is static, and best scores and the game in progress live in

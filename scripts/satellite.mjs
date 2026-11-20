@@ -1,10 +1,11 @@
 // Satellite imagery for a map: NASA Blue Marble Next Generation (July 2004, public domain), reprojected
 // pixel by pixel with the map's own projection, so it lines up with the borders exactly.
-import { createWriteStream, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+import { geoAzimuthalEqualArea, geoConicEqualArea, geoEqualEarth } from "d3-geo";
 import { WIDTH } from "./lib.mjs";
 
 const SOURCE = "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/bmng-topography-bathymetry/july/";
@@ -36,7 +37,38 @@ async function download(name) {
   return file;
 }
 
-/** Writes src/maps/satellite/<id>.webp, `PIXELS_PER_UNIT` times the map's size. */
+// The projections the builders use; src/satellite.ts rebuilds them the same way.
+const KINDS = { equalEarth: geoEqualEarth, azimuthalEqualArea: geoAzimuthalEqualArea, conicEqualArea: geoConicEqualArea };
+
+function rebuild({ kind, rotate, center, parallels, scale, translate }) {
+  const projection = KINDS[kind]().rotate(rotate).center(center).scale(scale).translate(translate);
+  return parallels ? projection.parallels(parallels) : projection;
+}
+
+/** The kind and parameters that rebuild `projection`, with points the page checks its copy against. */
+function describe(projection, width, height) {
+  const params = {
+    rotate: projection.rotate(),
+    center: projection.center(),
+    ...(projection.parallels ? { parallels: projection.parallels() } : {}),
+    scale: projection.scale(),
+    translate: projection.translate(),
+  };
+  const lonlats = [[0.1, 0.1], [0.5, 0.5], [0.9, 0.3], [0.3, 0.9]].map(([fx, fy]) => projection.invert([fx * width, fy * height]));
+  const checks = lonlats.map((ll) => [...ll, ...projection(ll)]);
+  for (const kind of Object.keys(KINDS)) {
+    // Only conic projections have standard parallels.
+    if ((kind === "conicEqualArea") !== Boolean(params.parallels)) continue;
+    const copy = rebuild({ kind, ...params });
+    if (checks.every(([lon, lat, x, y]) => Math.hypot(copy([lon, lat])[0] - x, copy([lon, lat])[1] - y) < 1e-6)) return { kind, ...params, checks };
+  }
+  throw new Error("satellite: unknown projection");
+}
+
+/**
+ * Writes src/maps/satellite/<id>.webp, `PIXELS_PER_UNIT` times the map's size, and <id>.json, the projection
+ * that places sharper tiles over it when zoomed in.
+ */
 export async function satellite(id, projection, height) {
   const width = Math.round(WIDTH * PIXELS_PER_UNIT);
   const rows = Math.round(height * PIXELS_PER_UNIT);
@@ -116,6 +148,8 @@ export async function satellite(id, projection, height) {
   }
 
   mkdirSync(OUT, { recursive: true });
+  const spec = { pixelsPerUnit: PIXELS_PER_UNIT, ...describe(projection, WIDTH, height) };
+  writeFileSync(fileURLToPath(new URL(`${id}.json`, OUT)), `${JSON.stringify(spec)}\n`);
   const file = fileURLToPath(new URL(`${id}.webp`, OUT));
   const opaque = !lon.some(Number.isNaN);
   let image = sharp(out, { raw: { width, height: rows, channels: 4 } });
