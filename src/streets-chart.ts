@@ -7,9 +7,8 @@ import { num, tr } from "./i18n.ts";
 const SVG = "http://www.w3.org/2000/svg";
 const [W, H] = [360, 130];
 const PAD = { left: 34, right: 8, top: 8, bottom: 18 };
-/** Gaps below this show at the bottom: streets that meet are 0 m apart, which a log scale can't place. */
-const FLOOR_M = 10;
-const TICKS_M = [10, 100, 1000, 10000];
+/** Tick steps to pick from, in metres: the first that gives at most 5 ticks above 0. */
+const STEPS_M = [500, 1000, 2000, 5000];
 
 export interface Gap {
   /** Metres from the street found before. */
@@ -41,11 +40,13 @@ export class GapChart {
 
   constructor(private readonly gaps: Gap[], random: number) {
     const n = gaps.length;
-    const top = Math.max(20000, ...gaps.map((g) => g.metres));
+    // A linear scale from 0, up to the first tick above the farthest gap.
+    const far = Math.max(random, ...gaps.map((g) => g.metres));
+    const step = STEPS_M.find((s) => far / s <= 5) ?? STEPS_M.at(-1)!;
+    const top = Math.max(step, Math.ceil(far / step) * step);
     this.x = (i) => PAD.left + (n > 1 ? (i / (n - 1)) * (W - PAD.left - PAD.right) : 0);
     const y = (m: number) => {
-      const t = (Math.log10(Math.max(FLOOR_M, m)) - Math.log10(FLOOR_M)) / (Math.log10(top) - Math.log10(FLOOR_M));
-      return H - PAD.bottom - t * (H - PAD.top - PAD.bottom);
+      return H - PAD.bottom - (m / top) * (H - PAD.top - PAD.bottom);
     };
     const chart = svg("svg", { class: "gap-chart", viewBox: `0 0 ${W} ${H}`, role: "img" });
     chart.setAttribute("aria-label", tr("Distance of each find from the one before", "Distance de chaque trouvaille à la précédente"));
@@ -53,10 +54,10 @@ export class GapChart {
     this.clip = svg("rect", { x: 0, y: 0, width: W, height: H });
     clipPath.append(this.clip);
     chart.append(clipPath);
-    for (const m of TICKS_M) {
+    for (let m = 0; m <= top; m += step) {
       chart.append(svg("line", { class: "grid", x1: PAD.left, x2: W - PAD.right, y1: y(m), y2: y(m) }));
       const label = svg("text", { class: "tick", x: PAD.left - 4, y: y(m) + 3, "text-anchor": "end" });
-      label.textContent = m === FLOOR_M ? `≤ ${m} m` : m < 1000 ? `${m} m` : `${num(m / 1000)} km`;
+      label.textContent = m === 0 ? "0" : m < 1000 ? `${m} m` : `${num(m / 1000, m % 1000 ? 1 : 0)} km`;
       chart.append(label);
     }
     const axis = svg("text", { class: "tick", x: W - PAD.right, y: H - 4, "text-anchor": "end" });
