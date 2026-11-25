@@ -16,8 +16,10 @@ they cover (overall and per arrondissement) and their length out of about 1,570 
 street to see where its name comes from. Confetti mark milestones (1%, 5%, 10%… of the area, 100,
 500, 1,000… names). "Replay your finds" lights them up again in the order they were found.
 Progress stays in the browser. "Copy a link to merge your finds" gives a link
-that adds them to whichever browser opens it: another device, or a friend's. The link has one bit
-per name, deflated: under 1,000 characters even with half of Paris found.
+that adds them to whichever browser opens it: another device, or a friend's, after its own finds and
+in the order they were found, so the replay stays right. The link lists the names in that order,
+deflated: about 1,200 characters for 500 names, 4,700 for 2,000. Older links, which held only which
+names were found, still work.
 
 ## Run
 

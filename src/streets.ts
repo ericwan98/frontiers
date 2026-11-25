@@ -206,30 +206,55 @@ export class Streets {
   }
 }
 
-/** First character of a progress code: the format, should it ever change. */
-const CODE_VERSION = "1";
+/**
+ * First character of a progress code: its format. "1" has one bit per name of `order`, so it loses the
+ * order of finds; "2" lists the names in the order they were found. Links of both kinds stay readable.
+ */
+const CODE_VERSION = { set: "1", ordered: "2" };
 
 const squeeze = async (bytes: Uint8Array<ArrayBuffer>, stream: CompressionStream | DecompressionStream) =>
   new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
 
-/** Found names as a short code for a link: one bit per name of `order`, deflated, in base64url. */
+const toBase64Url = (bytes: Uint8Array) =>
+  btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join("")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const fromBase64Url = (text: string) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+
+/** A version 1 code: one bit per name of `order`, deflated, in base64url. New links use packOrder. */
 export async function packNames(order: string[], has: (name: string) => boolean): Promise<string> {
   const bits = new Uint8Array(Math.ceil(order.length / 8));
   order.forEach((name, i) => {
     if (has(name)) bits[i >> 3] |= 1 << (i & 7);
   });
-  const packed = await squeeze(bits, new CompressionStream("deflate-raw"));
-  const base64 = btoa(String.fromCharCode(...packed));
-  return CODE_VERSION + base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return CODE_VERSION.set + toBase64Url(await squeeze(bits, new CompressionStream("deflate-raw")));
 }
 
-/** The names in a code from packNames, or null if it is broken. Codes made before names were added still work. */
+/**
+ * Found names as a code for a link, in the order given: each name's place in `order` as a 16-bit number,
+ * deflated, in base64url. Names that are not in `order` are left out.
+ */
+export async function packOrder(order: string[], names: string[]): Promise<string> {
+  if (order.length > 0x10000) throw new Error("packOrder: order has outgrown 16-bit places");
+  const place = new Map(order.map((name, i) => [name, i]));
+  const places = names.flatMap((name) => place.get(name) ?? []);
+  const bytes = new Uint8Array(places.length * 2);
+  const view = new DataView(bytes.buffer);
+  places.forEach((p, i) => view.setUint16(i * 2, p, true));
+  return CODE_VERSION.ordered + toBase64Url(await squeeze(bytes, new CompressionStream("deflate-raw")));
+}
+
+/**
+ * The names in a code, in the order they were found, or null if it is broken. Version 1 codes have no order:
+ * their names come in `order`. Places past the end of `order`, from newer data, are left out.
+ */
 export async function unpackNames(order: string[], code: string): Promise<string[] | null> {
-  if (!code.startsWith(CODE_VERSION)) return null;
+  const version = code.charAt(0);
+  if (version !== CODE_VERSION.set && version !== CODE_VERSION.ordered) return null;
   try {
-    const bytes = Uint8Array.from(atob(code.slice(1).replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
-    const bits = await squeeze(bytes, new DecompressionStream("deflate-raw"));
-    return order.filter((_, i) => (bits[i >> 3] >> (i & 7)) & 1);
+    const bytes = await squeeze(fromBase64Url(code.slice(1)), new DecompressionStream("deflate-raw"));
+    if (version === CODE_VERSION.set) return order.filter((_, i) => (bytes[i >> 3] >> (i & 7)) & 1);
+    if (bytes.length % 2) return null;
+    const view = new DataView(bytes.buffer);
+    return Array.from({ length: bytes.length / 2 }, (_, i) => order[view.getUint16(i * 2, true)]).filter((name) => name !== undefined);
   } catch {
     return null;
   }

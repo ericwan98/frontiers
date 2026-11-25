@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import paris from "../src/maps/paris.json";
 import data from "../src/maps/paris-streets.json";
-import { normalize, packNames, Streets, unpackNames, withinOneEdit, type StreetsData } from "../src/streets.ts";
+import { normalize, packNames, packOrder, Streets, unpackNames, withinOneEdit, type StreetsData } from "../src/streets.ts";
 
 const streets = new Streets(data as StreetsData);
 const found = (input: string) => {
@@ -114,21 +114,33 @@ describe("progress links", () => {
     expect(data.voies.every((v) => numbered.has(v.k))).toBe(true);
   });
 
-  it("round-trip found names in a short code", async () => {
-    const found = new Set(order.filter((_, i) => i % 7 === 0));
-    const code = await packNames(order, (n) => found.has(n));
-    expect(code.length).toBeLessThan(1000);
-    expect(code).toMatch(/^1[\w-]+$/);
-    expect(await unpackNames(order, code)).toEqual([...found]);
-    expect(await unpackNames(order, await packNames(order, () => false))).toEqual([]);
+  it("round-trip found names in the order they were found", async () => {
+    const found = order.filter((_, i) => i % 7 === 0).reverse();
+    found.push(found.shift()!);
+    const code = await packOrder(order, found);
+    expect(code).toMatch(/^2[\w-]+$/);
+    expect(await unpackNames(order, code)).toEqual(found);
+    expect(await unpackNames(order, await packOrder(order, []))).toEqual([]);
+  });
+
+  it("leave out names that are not in the data", async () => {
+    expect(await unpackNames(order, await packOrder(order, [order[9], "Rue Disparue", order[2]]))).toEqual([order[9], order[2]]);
   });
 
   it("still read codes made before new names were added", async () => {
-    const code = await packNames(order.slice(0, 100), (n) => n === order[3]);
-    expect(await unpackNames([...order, "Rue Nouvelle"], code)).toEqual([order[3]]);
+    expect(await unpackNames([...order, "Rue Nouvelle"], await packOrder(order.slice(0, 100), [order[3]]))).toEqual([order[3]]);
+    expect(await unpackNames([...order, "Rue Nouvelle"], await packNames(order.slice(0, 100), (n) => n === order[3]))).toEqual([order[3]]);
+  });
+
+  it("still read version 1 codes, which hold no order: names come in data order", async () => {
+    const found = new Set(order.filter((_, i) => i % 7 === 0));
+    const code = await packNames(order, (n) => found.has(n));
+    expect(code).toMatch(/^1[\w-]+$/);
+    expect(await unpackNames(order, code)).toEqual([...found]);
   });
 
   it("refuse broken codes", async () => {
+    expect(await unpackNames(order, "3abc")).toBeNull();
     expect(await unpackNames(order, "2abc")).toBeNull();
     expect(await unpackNames(order, "1!!!")).toBeNull();
   });

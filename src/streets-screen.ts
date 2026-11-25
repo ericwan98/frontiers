@@ -4,7 +4,7 @@ import { button, h } from "./dom.ts";
 import type { GameMap } from "./game.ts";
 import { num, percent as pct, tr } from "./i18n.ts";
 import { fanfare } from "./sound.ts";
-import { packNames, type StreetGroup, type Streets } from "./streets.ts";
+import { packOrder, type StreetGroup, type Streets } from "./streets.ts";
 import type { FoundStreet, MapView } from "./view.ts";
 
 const RECENT = 8;
@@ -222,8 +222,8 @@ export class StreetsScreen {
 
   /** A link that adds these finds to whichever browser opens it: another device, or a friend's. */
   private async share(): Promise<void> {
-    const found = new Set(this.found);
-    const code = await packNames(this.streets.data.order, (name) => found.has(this.streets.groupOf(name)!));
+    // In the order they were found, so a merge keeps the replay right.
+    const code = await packOrder(this.streets.data.order, this.found.map((g) => g.name));
     const url = new URL(location.pathname, location.origin);
     url.searchParams.set(STREETS_PARAM, `${this.map.id}.${code}`);
     const what = tr(
