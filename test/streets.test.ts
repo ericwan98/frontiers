@@ -105,6 +105,19 @@ describe("Paris streets", () => {
   });
 });
 
+describe("gaps between finds", () => {
+  const g = (name: string) => streets.groupOf(name)!;
+
+  it("are about 0 for streets that meet, and grow with the distance", () => {
+    expect(streets.gap(g("Mouffetard"), g("Lacépède"))).toBeLessThan(20);
+    expect(streets.gap(g("Lepic"), g("Abbesses"))).toBeLessThan(20);
+    // Measured on the map: the rue Mouffetard ends about 1.4 km from the rue de Rivoli.
+    expect(streets.gap(g("Mouffetard"), g("Rivoli"))).toBeGreaterThan(1000);
+    expect(streets.gap(g("Mouffetard"), g("Rivoli"))).toBeLessThan(2000);
+    expect(streets.gap(g("Rivoli"), g("Mouffetard"))).toBe(streets.gap(g("Mouffetard"), g("Rivoli")));
+  });
+});
+
 describe("progress links", () => {
   const order = data.order;
 

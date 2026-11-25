@@ -14,7 +14,10 @@ and no timer. A name finds its faubourg and porte too: "Saint-Martin" also light
 Faubourg Saint-Martin. Counters show the names found out of about 5,400, the share of the street area
 they cover (overall and per arrondissement) and their length out of about 1,570 km. Tap a found
 street to see where its name comes from. Confetti mark milestones (1%, 5%, 10%… of the area, 100,
-500, 1,000… names). "Replay your finds" lights them up again in the order they were found.
+500, 1,000… names). "Replay your finds" lights them up again in the order they were found, with a chart of how
+far each find is from the one before (`src/streets-chart.ts`): finds from a neighbourhood you know
+sit low, names typed at random sit near the "at random" line, the median distance between two of
+your finds picked at random.
 Progress stays in the browser. "Copy a link to merge your finds" gives a link
 that adds them to whichever browser opens it: another device, or a friend's, after its own finds and
 in the order they were found, so the replay stays right. The link lists the names in that order,

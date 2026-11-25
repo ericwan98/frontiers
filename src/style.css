@@ -1005,3 +1005,63 @@ button {
   background: rgb(255 253 248 / 0.8);
   border-radius: 6px;
 }
+
+/* Replay chart: grey dots for each find, the accent line for their trend, dashed for "at random". */
+.gap-chart-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.gap-chart {
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+
+.gap-chart .grid {
+  stroke: #e6e2d8;
+  stroke-width: 1;
+}
+
+.gap-chart .tick {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
+.gap-chart .dots {
+  stroke: var(--muted);
+  stroke-opacity: 0.45;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.gap-chart .trend {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.gap-chart .random {
+  stroke: var(--ink);
+  stroke-opacity: 0.6;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.gap-chart .random-label {
+  fill: var(--ink);
+  font-size: 9px;
+}
+
+.gap-chart .cursor {
+  stroke: var(--ink);
+  stroke-width: 1;
+}
+
+.gap-summary,
+.gap-readout {
+  margin: 0;
+  font-size: 0.75rem;
+}

@@ -147,6 +147,37 @@ export class Streets {
     return this.byId.get(id);
   }
 
+  /** Metres between the nearest corners of two groups' footprints: about 0 for streets that meet. */
+  gap(a: StreetGroup, b: StreetGroup): number {
+    const [p, q] = [this.corners(a), this.corners(b)];
+    let best = Infinity;
+    for (let i = 0; i < p.length; i += 2) {
+      for (let j = 0; j < q.length; j += 2) best = Math.min(best, (p[i] - q[j]) ** 2 + (p[i + 1] - q[j + 1]) ** 2);
+    }
+    return Math.sqrt(best) * this.data.kmPerUnit * 1000;
+  }
+
+  private readonly cornerCache = new Map<StreetGroup, Float64Array>();
+
+  /** A group's footprint corners, x then y, in map units. Paths are "M x y l dx dy … z". */
+  private corners(g: StreetGroup): Float64Array {
+    let out = this.cornerCache.get(g);
+    if (out) return out;
+    const xy: number[] = [];
+    for (const v of g.voies) {
+      for (const part of v.d.split("M").slice(1)) {
+        const [move, line = ""] = part.replace(/z/g, "").split("l");
+        const [nums, rel] = [move.match(/-?\d*\.?\d+/g)!.map(Number), (line.match(/-?\d*\.?\d+/g) ?? []).map(Number)];
+        let [x, y] = nums;
+        xy.push(x, y);
+        for (let i = 0; i + 1 < rel.length; i += 2) xy.push((x += rel[i]), (y += rel[i + 1]));
+      }
+    }
+    out = Float64Array.from(xy);
+    this.cornerCache.set(g, out);
+    return out;
+  }
+
   /** The group a voie name such as "Rivoli" belongs to: how found streets are saved. */
   groupOf(name: string): StreetGroup | undefined {
     return this.byId.get(normalize(name));

@@ -5,6 +5,7 @@ import type { GameMap } from "./game.ts";
 import { num, percent as pct, tr } from "./i18n.ts";
 import { fanfare } from "./sound.ts";
 import { packOrder, type StreetGroup, type Streets } from "./streets.ts";
+import { GapChart } from "./streets-chart.ts";
 import type { FoundStreet, MapView } from "./view.ts";
 
 const RECENT = 8;
@@ -70,6 +71,8 @@ export class StreetsScreen {
   private readonly more: HTMLButtonElement;
   private readonly replay: HTMLButtonElement;
   private timelapseFrame = 0;
+  /** Shown from the start of a replay until the next find, tap or stop. */
+  private chart: GapChart | null = null;
 
   constructor(
     private readonly streets: Streets,
@@ -247,12 +250,14 @@ export class StreetsScreen {
     const all = [...this.found];
     if (all.length === 0) return this.say(tr("Find a street first.", "Trouve d'abord une rue."));
     const duration = Math.min(TIMELAPSE_MS.max, Math.max(TIMELAPSE_MS.min, all.length * TIMELAPSE_MS.each));
+    this.showChart(all);
     this.view.resetZoom();
     this.replay.textContent = tr("Stop the replay", "Arrêter");
     const start = performance.now();
     const step = (now: number) => {
       const n = Math.min(all.length, Math.max(1, Math.ceil(((now - start) / duration) * all.length)));
       this.update(all.slice(0, n), all[n - 1]);
+      this.chart?.reveal(n - 1);
       this.say(`${tr("Replay:", "Revoir :")} ${count(n)} / ${count(all.length)} ${tr("names", "noms")}`);
       this.timelapseFrame = n < all.length ? requestAnimationFrame(step) : 0;
       if (!this.timelapseFrame) this.replay.textContent = REPLAY;
@@ -260,7 +265,34 @@ export class StreetsScreen {
     this.timelapseFrame = requestAnimationFrame(step);
   }
 
+  /** The chart of how far each find is from the one before, for the finds in `all`. */
+  private showChart(all: StreetGroup[]): void {
+    this.hideChart();
+    if (all.length < 3) return;
+    const gaps = all.slice(1).map((g, i) => ({ metres: this.streets.gap(all[i], g), name: capital(voieList(g)), previous: voieList(all[i]) }));
+    // The same distance between two of these finds picked at random, with a fixed seed so it doesn't move.
+    let seed = 1;
+    const pick = () => {
+      seed = (seed * 16807) % 2147483647;
+      return all[seed % all.length];
+    };
+    const random = Array.from({ length: Math.max(500, gaps.length) }, () => {
+      const [a, b] = [pick(), pick()];
+      return a === b ? null : this.streets.gap(a, b);
+    }).filter((m) => m !== null);
+    random.sort((a, b) => a - b);
+    this.chart = new GapChart(gaps, random[random.length >> 1]);
+    this.chart.reveal(0);
+    this.message.after(this.chart.element);
+  }
+
+  private hideChart(): void {
+    this.chart?.element.remove();
+    this.chart = null;
+  }
+
   private endTimelapse(): void {
+    this.hideChart();
     if (!this.timelapseFrame) return;
     cancelAnimationFrame(this.timelapseFrame);
     this.timelapseFrame = 0;
