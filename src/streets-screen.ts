@@ -282,11 +282,15 @@ export class StreetsScreen {
     }).filter((m) => m !== null);
     random.sort((a, b) => a - b);
     this.chart = new GapChart(gaps, random[random.length >> 1]);
+    const path = (g: StreetGroup) => g.voies.map((v) => v.d).join("");
+    // Gap i is between find i and find i + 1: light up the later one, and the earlier one fainter.
+    this.chart.onHover = (i) => (i === null ? this.view.hoverStreets() : this.view.hoverStreets(path(all[i + 1]), path(all[i])));
     this.chart.reveal(0);
     this.message.after(this.chart.element);
   }
 
   private hideChart(): void {
+    if (this.chart) this.view.hoverStreets();
     this.chart?.element.remove();
     this.chart = null;
   }

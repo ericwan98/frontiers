@@ -94,6 +94,8 @@ export class MapView {
   private readonly streetBase: SVGPathElement;
   private readonly streetFound: SVGGElement;
   private readonly streetLatest: SVGPathElement;
+  private readonly streetHover: SVGPathElement;
+  private readonly streetHoverPrevious: SVGPathElement;
   private readonly streetPaths = new Map<string, SVGPathElement>();
   private stroke: { points: Ring; erase: boolean; pointerId: number } | null = null;
   /** `tap` holds where a press began while it may still drop a pin. */
@@ -127,8 +129,10 @@ export class MapView {
     this.streetBase = el("path", { class: "street-base" });
     this.streetFound = el("g", { class: "street-found" });
     this.streetLatest = el("path", { class: "street-latest" });
+    this.streetHoverPrevious = el("path", { class: "street-hover-previous" });
+    this.streetHover = el("path", { class: "street-hover" });
     this.streetLayer = el("g", { class: "streets" });
-    this.streetLayer.append(this.streetBase, this.streetFound, this.streetLatest);
+    this.streetLayer.append(this.streetBase, this.streetFound, this.streetLatest, this.streetHoverPrevious, this.streetHover);
     this.placedLayer = el("g");
     this.draftPath = el("path", { class: "draft" });
     this.truthLayer = el("g", { class: "truth" });
@@ -228,6 +232,12 @@ export class MapView {
       this.streetPaths.set(f.id, path);
     }
     this.streetLatest.setAttribute("d", latest?.d ?? "");
+  }
+
+  /** Lights up a street's path and, fainter, the one found before it; no paths clears both. */
+  hoverStreets(street = "", previous = ""): void {
+    this.streetHover.setAttribute("d", street);
+    this.streetHoverPrevious.setAttribute("d", previous);
   }
 
   zoomBy(factor: number, at?: Pair): void {

@@ -10,6 +10,8 @@ const PAD = { left: 34, right: 8, top: 8, bottom: 18 };
 /** Gaps below this show at the bottom: streets that meet are 0 m apart, which a log scale can't place. */
 const FLOOR_M = 10;
 const TICKS_M = [10, 100, 1000, 10000];
+/** Finds in the line's running median: it follows a change of habit within about 13 finds. */
+const TREND_WINDOW = 25;
 
 export interface Gap {
   /** Metres from the street found before. */
@@ -38,6 +40,9 @@ export class GapChart {
   /** Shown once the replay has shown every find: it sums up the whole run. */
   private readonly summary: HTMLElement;
   private shown: number;
+
+  /** The gap under the pointer, or null when it leaves: the screen lights up its streets on the map. */
+  onHover: (i: number | null) => void = () => {};
 
   constructor(private readonly gaps: Gap[], random: number) {
     const n = gaps.length;
@@ -69,9 +74,8 @@ export class GapChart {
     chart.append(randomLabel);
     const data = svg("g", { "clip-path": "url(#gap-reveal)" });
     data.append(svg("path", { class: "dots", d: gaps.map((g, i) => `M${this.x(i).toFixed(1)} ${y(g.metres).toFixed(1)}h0`).join("") }));
-    // Median of the last `window` gaps, so the line only uses finds the replay has shown.
-    const window = Math.max(5, Math.min(75, Math.round(n / 12)));
-    const trend = gaps.map((_, i) => median(gaps.slice(Math.max(0, i - window + 1), i + 1).map((g) => g.metres)));
+    // Median of the last TREND_WINDOW gaps, so the line only uses finds the replay has shown.
+    const trend = gaps.map((_, i) => median(gaps.slice(Math.max(0, i - TREND_WINDOW + 1), i + 1).map((g) => g.metres)));
     data.append(svg("path", { class: "trend", d: trend.map((m, i) => `${i ? "L" : "M"}${this.x(i).toFixed(1)} ${y(m).toFixed(1)}`).join("") }));
     const cursor = svg("line", { class: "cursor", y1: PAD.top, y2: H - PAD.bottom, visibility: "hidden" });
     chart.append(data, cursor);
@@ -87,7 +91,7 @@ export class GapChart {
       h("strong", {}, formatKm(median(gaps.slice(-quarter).map((g) => g.metres)) / 1000)),
       tr(" · at random ", " · au hasard "),
       h("strong", {}, formatKm(random / 1000)),
-      tr(`. Line: median of the last ${window}.`, `. Ligne : médiane des ${window} dernières.`),
+      tr(`. Line: median of the last ${TREND_WINDOW}.`, `. Ligne : médiane des ${TREND_WINDOW} dernières.`),
     );
     this.readout = h("p", { class: "gap-readout muted" }, " ");
     chart.addEventListener("pointermove", (e) => {
@@ -113,6 +117,7 @@ export class GapChart {
 
   private hover(i: number | null, cursor: SVGLineElement): void {
     cursor.setAttribute("visibility", i === null ? "hidden" : "visible");
+    this.onHover(i);
     if (i === null) return void this.readout.replaceChildren(" ");
     const g = this.gaps[i];
     cursor.setAttribute("x1", String(this.x(i)));

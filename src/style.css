@@ -757,6 +757,22 @@ button {
   vector-effect: non-scaling-stroke;
 }
 
+/* The find under the pointer on the replay chart, and the one before it, fainter. Thick enough
+   that a 30 m impasse still shows with the whole city on screen. */
+.streets :is(.street-hover, .street-hover-previous) {
+  fill: var(--ink);
+  stroke: var(--ink);
+  stroke-width: 7px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.streets .street-hover-previous {
+  opacity: 0.45;
+}
+
 .map.streets-mode {
   cursor: grab;
 }

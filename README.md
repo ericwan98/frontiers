@@ -17,7 +17,8 @@ street to see where its name comes from. Confetti mark milestones (1%, 5%, 10%â€
 500, 1,000â€¦ names). "Replay your finds" lights them up again in the order they were found, with a chart of how
 far each find is from the one before (`src/streets-chart.ts`): finds from a neighbourhood you know
 sit low, names typed at random sit near the "at random" line, the median distance between two of
-your finds picked at random.
+your finds picked at random. The line is the median of the last 25; hovering the chart lights up
+that find on the map, and the one before it, fainter.
 Progress stays in the browser. "Copy a link to merge your finds" gives a link
 that adds them to whichever browser opens it: another device, or a friend's, after its own finds and
 in the order they were found, so the replay stays right. The link lists the names in that order,
